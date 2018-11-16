@@ -1,0 +1,14 @@
+# Emacs backup files
+*~
+
+# Python bytecode
+*.pyc
+
+# Python cache
+__pycache__/
+
+# Scoring script
+task9_scorer.py
+
+# Word2vec installation directory
+word2vec/
