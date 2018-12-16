@@ -78,7 +78,7 @@ python predict.py [path-model path-pickle path-output]
 Evaluate predictions on the test set using scoring script of SemEval-2018 Task 9:
 
 ```bash
-python2.7 path/to/SemEval-Task9/task9-scorer.py path/to/SemEval-Task9/test/gold/1A.english.test.gold.txt path/to/output/pred.txt
+python2.7 path/to/SemEval-Task9/task9-scorer.py path/to/SemEval-Task9/test/gold/<subtask>.<language>.test.gold.txt path/to/output/pred.txt
 ```
 
 
