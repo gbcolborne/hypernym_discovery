@@ -63,10 +63,10 @@ python prep_data.py [subtask dir-datasets path-embeddings path-output]
 
 Review hyperparameter settings in hparams.conf.
 
-Train model on training and dev data in pickle file, write a model named `<model-name>.pt` (as well as a log file) in `<dir-models>`:
+Train model on training and dev data in pickle file, write a model and a log file in `dir-model`:
 
 ```bash
-python train.py [path-pickle path-hparams dir-models model-name]
+python train.py [path-pickle path-hparams dir-model]
 ```
 
 Load trained model, make predictions on test queries:
