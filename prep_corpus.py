@@ -7,7 +7,7 @@ words in corpus to lower case and replace multi-word terms in corpus
 with a single token (by replacing spaces with underscores), and
 optionally replace out-of-vocab tokens with <UNK>. Write resulting
 corpus and a TSV file containing the frequency of terms in vocab (path
-is like input corpus, but with suffix .vocab).
+is like output corpus, but with suffix .vocab).
 
 """
 
