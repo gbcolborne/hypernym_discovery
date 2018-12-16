@@ -40,7 +40,7 @@ Get corpus from the website of SemEval-2018 Task 9:
 Make preprocessed corpus and vocab:
 
 ```bash
-./prep_corpus.py [subtask path-corpus dir-datasets path-output]
+python prep_corpus.py [subtask path-corpus dir-datasets path-output]
 ```
 
 Install word2vec in current directory:
