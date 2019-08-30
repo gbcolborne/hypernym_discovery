@@ -8,8 +8,8 @@ The data of [SemEval-2018 Task 9](https://competitions.codalab.org/competitions/
 
 ## Requirements
 
-- Python 3 (tested using version 3.6.1)
-- [PyTorch](https://pytorch.org/) (tested using version 0.3.0.post4)
+- Python 3 (tested using version 3.6.9)
+- [PyTorch](https://pytorch.org/) (tested using version 1.2.0)
 - [Pyhocon](https://github.com/chimpler/pyhocon) 
 - [Joblib](https://github.com/joblib/joblib)
 - Lots of disk space (downloading, unzipping, and preprocessing the corpus requires around 40 GB for sub-task 1A)
