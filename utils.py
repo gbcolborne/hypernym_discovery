@@ -18,9 +18,10 @@ def wrap_in_var(tensor, grad, cuda):
 
     """
     if cuda:
-        return autograd.Variable(tensor.cuda(), requires_grad=grad)
+        device = torch.device("cuda")
     else:
-        return autograd.Variable(tensor, requires_grad=grad)
+        device = torch.device("cpu")
+    return autograd.Variable(tensor, requires_grad=grad, device=device)
 
 def make_embedder(embeds, grad=False, cuda=False, sparse=False):
     """ Make an Embedding module from a numpy array.
