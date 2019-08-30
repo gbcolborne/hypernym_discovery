@@ -43,7 +43,7 @@ class Classifier(nn.Module):
             device = torch.device("cpu")
         self.output = nn.Linear(in_features=self.projector.nb_proj, out_features=1).to(device)
         self.loss_fn = nn.BCEWithLogitsLoss(weight=None, reduction="sum")
-
+        self.sigmoid = nn.Sigmoid()
 
     def get_nb_projections(self):
         return self.projector.get_nb_projections()
@@ -106,7 +106,7 @@ class Classifier(nn.Module):
 
         """
         logits = self._forward_to_logits(query_embeds, candidates)
-        return nn.sigmoid(logits.clamp(-10,10))
+        return self.sigmoid(logits.clamp(-10,10))
 
 
         
