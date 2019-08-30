@@ -200,7 +200,7 @@ def print_params(model):
     """ Print parameters of a PyTorch model. """
     for name, param in model.named_parameters():
         device = "CPU"
-        if type(param.data).__module__ == "torch.cuda":
+        if param.device.type=="cuda":
             device = "GPU"
         grad = "no"
         if param.requires_grad:
