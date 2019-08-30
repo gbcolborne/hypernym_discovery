@@ -41,7 +41,7 @@ def make_embedder(embeds, grad=False, cuda=False, sparse=False):
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
-    weight_data = torch.Tensor(weights, dtype=torch.float32, device=device)
+    weight_data = torch.tensor(weights, dtype=torch.float32, device=device)
     embed.weight=nn.Parameter(weight_data)
     embed.weight.requires_grad = grad
     return embed

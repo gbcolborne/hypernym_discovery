@@ -141,6 +141,10 @@ class Projector(nn.Module):
         if "cuda" not in kwargs:
             kwargs["cuda"] = False
         self.use_cuda = kwargs["cuda"]
+        if self.use_cuda:
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
         
         # Process positional args.
         if len(args) != 5:
@@ -156,13 +160,9 @@ class Projector(nn.Module):
         # Initialize projection matrices using scheme from Glorot &
         # Bengio (2008).
         var = 2 / (self.dim + self.dim)
-        mat_data = torch.Tensor(self.nb_proj, self.dim, self.dim, dtype=torch.float32)
+        mat_data = torch.zeros([self.nb_proj, self.dim, self.dim], dtype=torch.float32, device=device)
         mat_data.normal_(0, var)
         mat_data += torch.cat([torch.eye(self.dim).unsqueeze(0) for _ in range(self.nb_proj)])
-        if self.use_cuda:
-            device = torch.device("cuda")
-        else:
-            device = torch.device("cpu")
         self.pmats = nn.Parameter(mat_data, device=device)
 
     def get_nb_projections(self):

@@ -42,14 +42,14 @@ class Evaluator:
             end = (batch_ix + 1) * self.BATCH_NB_CANDIDATES
             if end > self.nb_candidates:
                 end = self.nb_candidates
-            batch_data = torch.Tensor(list(range(start, end)), dtype=torch.int64).unsqueeze(0)
+            batch_data = torch.tensor(list(range(start, end)), dtype=torch.int64).unsqueeze(0)
             batch_var = wrap_in_var(batch_data, False, cuda=model.use_cuda)
             self.candidate_batches.append(deepcopy(batch_var))
 
         # Create list of torch Variables containing a query ID
         self.query_ids = []
         for i in range(self.nb_queries):
-            self.query_ids.append(wrap_in_var(torch.Tensor([i], dtype=torch.int64), False, cuda=model.use_cuda))
+            self.query_ids.append(wrap_in_var(torch.tensor([i], dtype=torch.int64), False, cuda=model.use_cuda))
 
     def set_model(self, model):
         self.model = model
