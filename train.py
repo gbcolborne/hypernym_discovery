@@ -116,9 +116,9 @@ def train_model(model, optim, train_q_embed, dev_q_embed, dev_q_cand_ids,
         device = torch.device("cuda")
     else:
         device = torch.device("cpu")
-    dev_q_ids = torch.LongTensor(dev_pairs[:,0], device=device)
+    dev_q_ids = torch.Tensor(dev_pairs[:,0], dtype=torch.int64, device=device)
     dev_q_var = dev_q_embed(dev_q_ids)
-    dev_h_var = wrap_in_var(torch.LongTensor(dev_pairs[:,1]).unsqueeze(1), 
+    dev_h_var = wrap_in_var(torch.Tensor(dev_pairs[:,1], dtype=torch.int64).unsqueeze(1), 
                             False, model.use_cuda)
     dev_t_var = wrap_in_var(torch.ones((nb_dev_pairs,1)), 
                             False, model.use_cuda)
@@ -171,12 +171,12 @@ def train_model(model, optim, train_q_embed, dev_q_embed, dev_q_cand_ids,
             # Update on batch
             batch_row_id = (batch_row_id + 1) % batch_size
             if batch_row_id + 1 == batch_size:
-                q_ids = wrap_in_var(torch.LongTensor(batch_q), 
+                q_ids = wrap_in_var(torch.Tensor(batch_q, dtype=torch.int64), 
                                     False, model.use_cuda)
                 q_var = train_q_embed(q_ids)
-                h_pos_var = wrap_in_var(torch.LongTensor(batch_h_pos), 
+                h_pos_var = wrap_in_var(torch.Tensor(batch_h_pos, dtype=torch.int64), 
                                         False, model.use_cuda)
-                h_neg_var = wrap_in_var(torch.LongTensor(batch_h_neg), 
+                h_neg_var = wrap_in_var(torch.Tensor(batch_h_neg, dtype=torch.int64), 
                                         False, model.use_cuda)
                 optim.zero_grad()
                 pos_loss = model.get_loss(q_var, h_pos_var, t_pos_var)

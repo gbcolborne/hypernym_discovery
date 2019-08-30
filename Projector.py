@@ -156,7 +156,7 @@ class Projector(nn.Module):
         # Initialize projection matrices using scheme from Glorot &
         # Bengio (2008).
         var = 2 / (self.dim + self.dim)
-        mat_data = torch.FloatTensor(self.nb_proj, self.dim, self.dim)
+        mat_data = torch.Tensor(self.nb_proj, self.dim, self.dim, dtype=torch.float32)
         mat_data.normal_(0, var)
         mat_data += torch.cat([torch.eye(self.dim).unsqueeze(0) for _ in range(self.nb_proj)])
         if self.use_cuda:
