@@ -181,8 +181,8 @@ def train_model(model, optim, train_q_embed, dev_q_embed, dev_q_cand_ids,
                     torch.nn.utils.clip_grad_norm(train_q_embed.parameters(), clip)
                     torch.nn.utils.clip_grad_norm(model.parameters(), clip)
                 optim.step()
-                total_pos_loss += pos_loss.data[0]
-                total_neg_loss += neg_loss.data[0]
+                total_pos_loss += pos_loss.item()
+                total_neg_loss += neg_loss.item()
                 nb_updates += 1
 
         # Check progress
@@ -192,7 +192,7 @@ def train_model(model, optim, train_q_embed, dev_q_embed, dev_q_cand_ids,
         # Compute loss and MAP on dev set
         model.eval()
         dev_loss = model.get_loss(dev_q_var, dev_h_var, dev_t_var)
-        avg_dev_loss = dev_loss.data[0] / nb_dev_pairs
+        avg_dev_loss = dev_loss.item() / nb_dev_pairs
         MAP = dev_eval.get_MAP(dev_gold_ids)
         checkpoint_data = []
         checkpoint_data.append(str(epoch))
