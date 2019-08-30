@@ -37,15 +37,13 @@ class Classifier(nn.Module):
             raise TypeError(msg)
 
         self.projector = args[0]
-        self.output = nn.Linear(self.projector.nb_proj, 1)
         if self.use_cuda:
-            self.output.cuda()
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
+        self.output = nn.Linear(self.projector.nb_proj, device=device)
         self.loss_fn = nn.BCEWithLogitsLoss(weight=None, reduction="sum")
 
-    def _maybe_cuda(self, tensor):
-        if self.use_cuda and torch.cuda.is_available():
-            return tensor.cuda()
-        return tensor
 
     def get_nb_projections(self):
         return self.projector.get_nb_projections()
@@ -161,15 +159,15 @@ class Projector(nn.Module):
         mat_data = torch.FloatTensor(self.nb_proj, self.dim, self.dim)
         mat_data.normal_(0, var)
         mat_data += torch.cat([torch.eye(self.dim).unsqueeze(0) for _ in range(self.nb_proj)])
-        self.pmats = nn.Parameter(self._maybe_cuda(mat_data))
+        if self.use_cuda:
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
+        self.pmats = nn.Parameter(mat_data, device=device)
 
     def get_nb_projections(self):
         return self.nb_proj
 
-    def _maybe_cuda(self, tensor):
-        if self.use_cuda and torch.cuda.is_available():
-            return tensor.cuda()
-        return tensor
 
     def _get_projections(self, embeds):
         """ Get projections of embeddings.
