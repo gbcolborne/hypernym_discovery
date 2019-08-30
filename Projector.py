@@ -162,7 +162,7 @@ class Projector(nn.Module):
         var = 2 / (self.dim + self.dim)
         mat_data = torch.zeros([self.nb_proj, self.dim, self.dim], dtype=torch.float32, device=device)
         mat_data.normal_(0, var)
-        mat_data += torch.cat([torch.eye(self.dim).unsqueeze(0) for _ in range(self.nb_proj)])
+        mat_data += torch.cat([torch.eye(self.dim, device=device).unsqueeze(0) for _ in range(self.nb_proj)])
         self.pmats = nn.Parameter(mat_data, device=device)
 
     def get_nb_projections(self):
