@@ -40,7 +40,7 @@ class Classifier(nn.Module):
         self.output = nn.Linear(self.projector.nb_proj, 1)
         if self.use_cuda:
             self.output.cuda()
-        self.loss_fn = nn.BCEWithLogitsLoss(weight=None, size_average=False)
+        self.loss_fn = nn.BCEWithLogitsLoss(weight=None, reduction="sum")
 
     def _maybe_cuda(self, tensor):
         if self.use_cuda and torch.cuda.is_available():
