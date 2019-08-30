@@ -3,7 +3,7 @@ import codecs
 from copy import deepcopy
 import numpy as np
 import torch
-from utils import denormalize_term, wrap_in_var
+from utils import denormalize_term
 from task9_scorer import average_precision
 
 class Evaluator:
@@ -42,14 +42,17 @@ class Evaluator:
             end = (batch_ix + 1) * self.BATCH_NB_CANDIDATES
             if end > self.nb_candidates:
                 end = self.nb_candidates
-            batch_data = torch.tensor(list(range(start, end)), dtype=torch.int64).unsqueeze(0)
-            batch_var = wrap_in_var(batch_data, False, cuda=model.use_cuda)
+            batch_var = torch.tensor(list(range(start, end)), dtype=torch.int64, requires_grad=False).unsqueeze(0)
             self.candidate_batches.append(deepcopy(batch_var))
 
         # Create list of torch Variables containing a query ID
         self.query_ids = []
+        if self.model.use_cuda:
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
         for i in range(self.nb_queries):
-            self.query_ids.append(wrap_in_var(torch.tensor([i], dtype=torch.int64), False, cuda=model.use_cuda))
+            self.query_ids.append(torch.tensor([i], dtype=torch.int64, device=device, requires_grad=False))
 
     def set_model(self, model):
         self.model = model

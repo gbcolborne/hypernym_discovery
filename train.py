@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from Projector import Projector, Classifier
 from Evaluator import Evaluator
-from utils import print_params, make_embedder, wrap_in_var
+from utils import print_params, make_embedder
 
 doc = """Train model given a pickle file containing training and dev
 data, as well as hyperparameter settings. Write model and log
@@ -76,6 +76,12 @@ def train_model(model, optim, train_q_embed, dev_q_embed, dev_q_cand_ids,
         for (h_id, freq) in hyp_fd.items():
             pos_sample_prob[h_id] = sqrt(min_freq / freq)
 
+    # Check if we're using CUDA
+    if model.use_cuda:
+        device=torch.device("cuda")
+    else:
+        device=torch.device("cpu")
+
     # Initialize training batch for query IDs, positive hypernym IDs,
     # negative hypernym IDs, positive targets, and negative targets.
     # targets. We separate positive and negative examples to compute
@@ -84,10 +90,8 @@ def train_model(model, optim, train_q_embed, dev_q_embed, dev_q_cand_ids,
     batch_q = np.zeros(batch_size, 'int64')
     batch_h_pos = np.zeros((batch_size,1), 'int64')
     batch_h_neg = np.zeros((batch_size,nb_neg_samples), 'int64')
-    t_pos_var = wrap_in_var(torch.ones((batch_size,1)), 
-                            False, model.use_cuda)
-    t_neg_var = wrap_in_var(torch.zeros((batch_size,nb_neg_samples)), 
-                            False, model.use_cuda)
+    t_pos_var = torch.ones((batch_size,1), requires_grad=False, device=device)
+    t_neg_var = torch.zeros((batch_size,nb_neg_samples), requires_grad=False, device=device)
 
     # Prepare list of sets of gold hypernym IDs for queries in
     # training set. This is used for negative sampling.
@@ -111,17 +115,10 @@ def train_model(model, optim, train_q_embed, dev_q_embed, dev_q_cand_ids,
 
 
     # Prepare input variables to compute loss on dev set
-
-    if model.use_cuda:
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
     dev_q_ids = torch.tensor(dev_pairs[:,0], dtype=torch.int64, device=device)
     dev_q_var = dev_q_embed(dev_q_ids)
-    dev_h_var = wrap_in_var(torch.tensor(dev_pairs[:,1], dtype=torch.int64).unsqueeze(1), 
-                            False, model.use_cuda)
-    dev_t_var = wrap_in_var(torch.ones((nb_dev_pairs,1)), 
-                            False, model.use_cuda)
+    dev_h_var = torch.tensor(dev_pairs[:,1], dtype=torch.int64, requires_grad=False, device=device).unsqueeze(1)
+    dev_t_var = torch.ones((nb_dev_pairs,1), dtype=torch.float32, requires_grad=False, device=device)
 
     # Make Evaluator to compute MAP on dev set
     dev_eval = Evaluator(model, dev_q_embed, dev_q_cand_ids)
@@ -171,13 +168,10 @@ def train_model(model, optim, train_q_embed, dev_q_embed, dev_q_cand_ids,
             # Update on batch
             batch_row_id = (batch_row_id + 1) % batch_size
             if batch_row_id + 1 == batch_size:
-                q_ids = wrap_in_var(torch.tensor(batch_q, dtype=torch.int64), 
-                                    False, model.use_cuda)
+                q_ids = torch.tensor(batch_q, dtype=torch.int64, requires_grad=False, device=device) 
                 q_var = train_q_embed(q_ids)
-                h_pos_var = wrap_in_var(torch.tensor(batch_h_pos, dtype=torch.int64), 
-                                        False, model.use_cuda)
-                h_neg_var = wrap_in_var(torch.tensor(batch_h_neg, dtype=torch.int64), 
-                                        False, model.use_cuda)
+                h_pos_var = torch.tensor(batch_h_pos, dtype=torch.int64, requires_grad=False, device=device)
+                h_neg_var = torch.tensor(batch_h_neg, dtype=torch.int64, requires_grad=False, device=device)
                 optim.zero_grad()
                 pos_loss = model.get_loss(q_var, h_pos_var, t_pos_var)
                 neg_loss = model.get_loss(q_var, h_neg_var, t_neg_var)

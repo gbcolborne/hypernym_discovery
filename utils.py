@@ -5,23 +5,6 @@ import torch
 from torch import autograd
 from torch import nn
 
-def wrap_in_var(tensor, grad, cuda):
-    """ Wrap a tensor in a variable.
-
-    Args:
-    - tensor
-    - grad: do we need a gradient?
-    - cuda: are we using CUDA?
-
-    Returns:
-    - variable
-
-    """
-    if cuda:
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
-    return autograd.Variable(tensor, requires_grad=grad, device=device)
 
 def make_embedder(embeds, grad=False, cuda=False, sparse=False):
     """ Make an Embedding module from a numpy array.
