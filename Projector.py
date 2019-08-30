@@ -41,7 +41,7 @@ class Classifier(nn.Module):
             device = torch.device("cuda")
         else:
             device = torch.device("cpu")
-        self.output = nn.Linear(in_features=self.projector.nb_proj, out_features=1)
+        self.output = nn.Linear(in_features=self.projector.nb_proj, out_features=1).to(device)
         self.loss_fn = nn.BCEWithLogitsLoss(weight=None, reduction="sum")
 
 
