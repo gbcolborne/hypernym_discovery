@@ -178,8 +178,8 @@ def train_model(model, optim, train_q_embed, dev_q_embed, dev_q_cand_ids,
                 loss = pos_loss + neg_loss
                 loss.backward()
                 if clip > 0:
-                    torch.nn.utils.clip_grad_norm(train_q_embed.parameters(), clip)
-                    torch.nn.utils.clip_grad_norm(model.parameters(), clip)
+                    torch.nn.utils.clip_grad_norm_(train_q_embed.parameters(), clip)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
                 optim.step()
                 total_pos_loss += pos_loss.item()
                 total_neg_loss += neg_loss.item()
