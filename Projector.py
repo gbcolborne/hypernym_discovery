@@ -108,7 +108,7 @@ class Classifier(nn.Module):
 
         """
         logits = self._forward_to_logits(query_embeds, candidates)
-        return nn.functional.sigmoid(logits.clamp(-10,10))
+        return nn.sigmoid(logits.clamp(-10,10))
 
 
         
