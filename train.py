@@ -111,9 +111,12 @@ def train_model(model, optim, train_q_embed, dev_q_embed, dev_q_cand_ids,
 
 
     # Prepare input variables to compute loss on dev set
-    dev_q_ids = torch.LongTensor(dev_pairs[:,0])
+
     if model.use_cuda:
-        dev_q_ids = dev_q_ids.cuda()
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    dev_q_ids = torch.LongTensor(dev_pairs[:,0], device=device)
     dev_q_var = dev_q_embed(dev_q_ids)
     dev_h_var = wrap_in_var(torch.LongTensor(dev_pairs[:,1]).unsqueeze(1), 
                             False, model.use_cuda)
@@ -291,8 +294,6 @@ if __name__ == "__main__":
                           hparams["normalize_e"], hparams["normalize_p"], 
                           cuda=use_gpu, seed=args.seed)
     classifier = Classifier(projector, cuda=use_gpu, seed=args.seed)
-    if use_gpu:
-        classifier.cuda()
 
     # Print parameter info
     print("Model parameters:")
