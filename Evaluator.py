@@ -22,6 +22,10 @@ class Evaluator:
         """
 
         self.model = model
+        if self.model.use_cuda:
+            self.device=torch.device("cuda")
+        else:
+            self.device=torch.device("cpu")
         self.query_embed = query_embed
         self.nb_queries = self.query_embed.weight.shape[0]
         self.query_cand_ids = query_cand_ids
@@ -42,17 +46,13 @@ class Evaluator:
             end = (batch_ix + 1) * self.BATCH_NB_CANDIDATES
             if end > self.nb_candidates:
                 end = self.nb_candidates
-            batch_var = torch.tensor(list(range(start, end)), dtype=torch.int64, requires_grad=False).unsqueeze(0)
+            batch_var = torch.tensor(list(range(start, end)), dtype=torch.int64, requires_grad=False, device=self.device).unsqueeze(0)
             self.candidate_batches.append(deepcopy(batch_var))
 
         # Create list of torch Variables containing a query ID
         self.query_ids = []
-        if self.model.use_cuda:
-            device = torch.device("cuda")
-        else:
-            device = torch.device("cpu")
         for i in range(self.nb_queries):
-            self.query_ids.append(torch.tensor([i], dtype=torch.int64, device=device, requires_grad=False))
+            self.query_ids.append(torch.tensor([i], dtype=torch.int64, device=self.device, requires_grad=False))
 
     def set_model(self, model):
         self.model = model
