@@ -37,9 +37,10 @@ def make_embedder(embeds, grad=False, cuda=False, sparse=False):
     embed = nn.Embedding(nb_embeds, dim, sparse=sparse)
     weights = deepcopy(embeds)
     if cuda:
-        weight_data = torch.FloatTensor(weights).cuda()
+        device = torch.device("cuda")
     else:
-        weight_data = torch.FloatTensor(weights)
+        device = torch.device("cpu")
+    weight_data = torch.FloatTensor(weights, device=device)
     embed.weight=nn.Parameter(weight_data)
     embed.weight.requires_grad = grad
     return embed
