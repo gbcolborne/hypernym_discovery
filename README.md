@@ -49,10 +49,10 @@ Install `word2vec` in current directory:
 ./install_word2vec.sh
 ```
 
-Train word embeddings using `word2vec`:
+Train word embeddings on corpus using `word2vec`. Make sure to use the corpus and vocab that were produced by `prep_corpus.py` (not the raw corpus):
 
 ```bash
-word2vec/trunk/word2vec -train [path-corpus] -read-vocab [path-vocab] -output [path-output] -cbow 0 -negative 10 -size 200 -window 7 -sample 1e-5 -min-count 1 -iter 10 -threads 8 -binary 0 
+word2vec/trunk/word2vec -train [path-preprocessed-corpus] -read-vocab [path-preprocessed-corpus].vocab -output [path-output] -cbow 0 -negative 10 -size 200 -window 7 -sample 1e-5 -min-count 1 -iter 10 -threads 8 -binary 0 
 ```
 
 Preprocess data and write in a pickle file:
