@@ -64,7 +64,7 @@ class TextDataset(Dataset):
     def __init__(self, tokenizer, args, file_path='train', block_size=512):
         assert os.path.isfile(file_path)
         directory, filename = os.path.split(file_path)
-        cached_features_file = os.path.join(directory, args.model_type + '_cached_lm_' + str(block_size) + '_' + filename)
+        cached_features_file = os.path.join(directory, args.model_name + '_cached_lm_' + str(block_size) + '_' + filename)
 
         if os.path.exists(cached_features_file) and not args.overwrite_cache:
             logger.info("Loading features from cached file %s", cached_features_file)
@@ -349,16 +349,17 @@ def main():
                         help="Path to a one-wordpiece-per-line vocabulary file (to build tokenizer)")
     parser.add_argument("--config_path", type=str, default=None, required=True,
                         help="Path of model config")
+    parser.add_argument("--model_type", default=None, type=str, required=True
+                        help="The model architecture (e.g. 'bert').")
+    parser.add_argument("--model_name", default=None, type=str, required=True
+                        help="The model name (e.g. 'bert-base-uncased')")
     parser.add_argument("--output_dir", default=None, type=str, required=True,
                         help="The output directory where the model predictions and checkpoints will be written.")
 
     ## Other parameters
     parser.add_argument("--eval_data_file", default=None, type=str,
                         help="An optional input evaluation data file to evaluate the perplexity on (a text file).")
-
-    parser.add_argument("--model_type", default="bert", type=str,
-                        help="The model architecture to be fine-tuned.")
-
+    
     parser.add_argument("--mlm", action='store_true',
                         help="Train with masked-language modeling loss instead of language modeling.")
     parser.add_argument("--mlm_probability", type=float, default=0.15,
