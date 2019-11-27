@@ -78,7 +78,7 @@ class TextDataset(Dataset):
             # can change this behavior by adding (model specific) padding.
             self.examples = []
             with open(file_path, encoding="utf-8") as f:
-                nb_lines_per_batch = 1000000
+                nb_lines_per_batch = 100000
                 nb_lines_processed = 0
                 token_buffer = []
                 text = ""
