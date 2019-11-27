@@ -40,13 +40,12 @@ except:
 
 from tqdm import tqdm, trange
 
-from transformers import (WEIGHTS_NAME, AdamW,
+from transformers import (WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup,
                                   BertConfig, BertForMaskedLM, BertTokenizer,
                                   GPT2Config, GPT2LMHeadModel, GPT2Tokenizer,
                                   OpenAIGPTConfig, OpenAIGPTLMHeadModel, OpenAIGPTTokenizer,
                                   RobertaConfig, RobertaForMaskedLM, RobertaTokenizer,
                                   DistilBertConfig, DistilBertForMaskedLM, DistilBertTokenizer)
-from transformers import WarmupLinearSchedule as get_linear_schedule_with_warmup
 
 logger = logging.getLogger(__name__)
 
@@ -496,10 +495,10 @@ def main():
 
     tokenizer = tokenizer_class(args.vocab_file,
                                 do_lower_case=args.do_lower_case)
-
+    logger.info("vocab size: {}".format(tokenizer.vocab_size))
+    logger.info("vocab size: {}".format(len(tokenizer)))
     config = config_class.from_json_file(args.config_path)
-    config.vocab_size = tokenizer.vocab_size
-    logger.info("vocab size: {}".format(config.vocab_size))
+    config.vocab_size = len(tokenizer)
     
     if args.block_size <= 0:
         args.block_size = tokenizer.max_len_single_sentence  # Our input block size will be the max possible for the model
