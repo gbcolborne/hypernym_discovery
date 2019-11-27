@@ -73,22 +73,46 @@ class TextDataset(Dataset):
         else:
             logger.info("Creating features from dataset file at %s", directory)
 
-            self.examples = []
-            with open(file_path, encoding="utf-8") as f:
-                text = f.read()
-
-            tokenized_text = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
-
-            for i in range(0, len(tokenized_text)-block_size+1, block_size): # Truncate in block of block_size
-                self.examples.append(tokenizer.build_inputs_with_special_tokens(tokenized_text[i:i+block_size]))
             # Note that we are loosing the last truncated example here for the sake of simplicity (no padding)
             # If your dataset is small, first you should loook for a bigger one :-) and second you
             # can change this behavior by adding (model specific) padding.
+            self.examples = []
+            with open(file_path, encoding="utf-8") as f:
+                nb_lines_per_batch = 1000000
+                nb_lines_processed = 0
+                token_buffer = []
+                text = ""
+                for line in f:
+                    text += line
+                    nb_lines_processed += 1
+                    if nb_lines_processed % nb_lines_per_batch == 0:
+                        examples, token_buffer = self.text_to_examples(text, tokenizer, token_buffer, block_size)
+                        self.examples += examples
+                        text = ""
+                        msg = "nb lines processed: {},  nb examples loaded: {}".format(nb_lines_processed, len(self.examples))
+                        logger.info(msg)
+            # Process remaining text
+            examples, token_buffer = self.text_to_examples(text, tokenizer, token_buffer, block_size)
+            self.examples += examples
+            msg = "nb lines processed: {},  nb examples loaded: {}".format(nb_lines_processed, len(self.examples))            
+            logger.info(msg)
 
             logger.info("Saving features into cached file %s", cached_features_file)
             with open(cached_features_file, 'wb') as handle:
                 pickle.dump(self.examples, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+    def text_to_examples(self, text, tokenizer, token_buffer, block_size):
+        token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
+        token_ids = token_buffer + token_ids
+        nb_blocks = len(token_ids) // block_size
+        remainder = len(token_ids) % block_size
+        examples = []
+        for i in range(nb_blocks):
+            block = token_ids[i*block_size:(i+1)*block_size]
+            examples.append(tokenizer.build_inputs_with_special_tokens(block))
+        token_buffer = token_ids[-remainder:]
+        return examples, token_buffer
+                
     def __len__(self):
         return len(self.examples)
 
