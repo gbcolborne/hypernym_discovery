@@ -349,9 +349,9 @@ def main():
                         help="Path to a one-wordpiece-per-line vocabulary file (to build tokenizer)")
     parser.add_argument("--config_path", type=str, default=None, required=True,
                         help="Path of model config")
-    parser.add_argument("--model_type", default=None, type=str, required=True
+    parser.add_argument("--model_type", default=None, type=str, required=True,
                         help="The model architecture (e.g. 'bert').")
-    parser.add_argument("--model_name", default=None, type=str, required=True
+    parser.add_argument("--model_name", default=None, type=str, required=True,
                         help="The model name (e.g. 'bert-base-uncased')")
     parser.add_argument("--output_dir", default=None, type=str, required=True,
                         help="The output directory where the model predictions and checkpoints will be written.")
