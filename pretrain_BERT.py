@@ -59,6 +59,7 @@ MODEL_CLASSES = {
 }
 
 
+
 class TextDataset(Dataset):
     def __init__(self, tokenizer, args, file_path='train', block_size=512):
         assert os.path.isfile(file_path)
@@ -90,25 +91,28 @@ class TextDataset(Dataset):
                         text = ""
                         msg = "nb lines processed: {},  nb examples loaded: {}".format(nb_lines_processed, len(self.examples))
                         logger.info(msg)
-            # Process remaining text
-            examples, token_buffer = self.text_to_examples(text, tokenizer, token_buffer, block_size)
-            self.examples += examples
-            msg = "nb lines processed: {},  nb examples loaded: {}".format(nb_lines_processed, len(self.examples))            
-            logger.info(msg)
+                # Process remaining text
+                if len(text):
+                    examples, token_buffer = self.text_to_examples(text, tokenizer, token_buffer, block_size)
+                    self.examples += examples
+                    msg = "nb lines processed: {},  nb examples loaded: {}".format(nb_lines_processed, len(self.examples))            
+                    logger.info(msg)
 
             logger.info("Saving features into cached file %s", cached_features_file)
             with open(cached_features_file, 'wb') as handle:
                 pickle.dump(self.examples, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     def text_to_examples(self, text, tokenizer, token_buffer, block_size):
-        token_ids = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(text))
+        tokens = tokenizer.tokenize(text)
+        token_ids = tokenizer.convert_tokens_to_ids(tokens)
         token_ids = token_buffer + token_ids
         nb_blocks = len(token_ids) // block_size
         remainder = len(token_ids) % block_size
         examples = []
         for i in range(nb_blocks):
             block = token_ids[i*block_size:(i+1)*block_size]
-            examples.append(tokenizer.build_inputs_with_special_tokens(block))
+            block = tokenizer.build_inputs_with_special_tokens(block)
+            examples.append(block)
         token_buffer = token_ids[-remainder:]
         return examples, token_buffer
                 
@@ -486,22 +490,37 @@ def main():
     # Set seed
     set_seed(args)
 
-    # Load pretrained model and tokenizer
+    # Build model and tokenizer
     if args.local_rank not in [-1, 0]:
         torch.distributed.barrier()  # Barrier to make sure only the first process in distributed training download model & vocab
 
     config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
-
-    tokenizer = tokenizer_class(args.vocab_file,
-                                do_lower_case=args.do_lower_case)
-    logger.info("vocab size: {}".format(tokenizer.vocab_size))
-    logger.info("vocab size: {}".format(len(tokenizer)))
     config = config_class.from_json_file(args.config_path)
+    
+    tokenizer = tokenizer_class(args.vocab_file,
+                                do_basic_tokenize=False,
+                                do_lower_case=args.do_lower_case)
+    # Hack: set max length of single sentence as the maximum sequence
+    # length of the model minus 2 (for the CLS and SEP tokens that we
+    # will add).
+    tokenizer.max_len_single_sentence = config["max_position_embeddings"] - 2
+
+    # Since tokenizer is not pretrained, we have to add the special
+    # tokens
+    BERT_special_tokens = {'unk_token':'[UNK]', 'sep_token':'[SEP]', 'pad_token':'[PAD]', 'cls_token':'[CLS]', 'mask_token':'[MASK]'}
+    nb_tokens_added = tokenizer.add_special_tokens(BERT_special_tokens)
+
+    logger.info("nb special tokens added to vocab: {}".format(nb_tokens_added))
+    logger.info("vocab size with special tokens: {}".format(len(tokenizer)))
+    logger.info("vocab size without specifal tokens: {}".format(tokenizer.vocab_size))
+    logger.info("Tokenizer max len for single sentence: {}".format(tokenizer.max_len_single_sentence))
+
     config.vocab_size = len(tokenizer)
     
     if args.block_size <= 0:
         args.block_size = tokenizer.max_len_single_sentence  # Our input block size will be the max possible for the model
     args.block_size = min(args.block_size, tokenizer.max_len_single_sentence)
+    logger.info(args.block_size)
     model = model_class(config=config)
     model.to(args.device)
 
