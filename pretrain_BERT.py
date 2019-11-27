@@ -499,6 +499,7 @@ def main():
 
     config = config_class.from_json_file(args.config_path)
     config.vocab_size = tokenizer.vocab_size
+    logger.info("vocab size: {}".format(config.vocab_size))
     
     if args.block_size <= 0:
         args.block_size = tokenizer.max_len_single_sentence  # Our input block size will be the max possible for the model
