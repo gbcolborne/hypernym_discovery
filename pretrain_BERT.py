@@ -503,7 +503,7 @@ def main():
     # Hack: set max length of single sentence as the maximum sequence
     # length of the model minus 2 (for the CLS and SEP tokens that we
     # will add).
-    tokenizer.max_len_single_sentence = config["max_position_embeddings"] - 2
+    tokenizer.max_len_single_sentence = config.max_position_embeddings - 2
 
     # Since tokenizer is not pretrained, we have to add the special
     # tokens
