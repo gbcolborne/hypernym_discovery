@@ -112,7 +112,12 @@ class TextDataset(Dataset):
         for i in range(nb_blocks):
             block = token_ids[i*block_size:(i+1)*block_size]
             block = tokenizer.build_inputs_with_special_tokens(block)
-            examples.append(block)
+            if None in block:
+                tok = tokens[i*block_size:(i+1)*block_size]
+                msg = "block contains None and was discarded.   Tokens: {},   IDs (including special): {}".format(tok, block)
+                logger.warning(msg)
+            else:
+                examples.append(block)
         token_buffer = token_ids[-remainder:]
         return examples, token_buffer
                 
