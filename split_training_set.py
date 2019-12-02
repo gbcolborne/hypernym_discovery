@@ -5,7 +5,7 @@ import argparse, random, os
 parser = argparse.ArgumentParser()
 parser.add_argument("train_queries", help="Path of training queries, one per line")
 parser.add_argument("train_gold", help="Path of training gold hypernyms, one per line")
-parser.add_argument("--dev_size", "-d", type=int, default=100)
+parser.add_argument("--dev_size", "-d", type=int, default=50)
 parser.add_argument("dir_out", help="Path of output directory")
 args = parser.parse_args()
 
