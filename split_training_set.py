@@ -18,15 +18,16 @@ for k,v in zip(queries, gold):
     if k not in data:
         data[k] = []
     data[k].append(v)
-
+    
 # Shuffle queries
+uniq_queries = list(set(queries))
 seed=91500
 random.seed(seed)
-random.shuffle(queries)
+random.shuffle(uniq_queries)
 
 # Split
-dev_queries = queries[:args.dev_size]
-train_queries = queries[args.dev_size:]
+dev_queries = uniq_queries[:args.dev_size]
+train_queries = uniq_queries[args.dev_size:]
 
 # Write
 if not os.path.exists(args.dir_out):
