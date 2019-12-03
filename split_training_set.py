@@ -5,7 +5,7 @@ import argparse, random, os
 parser = argparse.ArgumentParser()
 parser.add_argument("train_queries", help="Path of training queries, one per line")
 parser.add_argument("train_gold", help="Path of training gold hypernyms, one per line")
-parser.add_argument("--dev_size", "-d", type=int, default=100)
+parser.add_argument("--dev_size", "-d", type=int, default=50)
 parser.add_argument("dir_out", help="Path of output directory")
 args = parser.parse_args()
 
@@ -18,15 +18,16 @@ for k,v in zip(queries, gold):
     if k not in data:
         data[k] = []
     data[k].append(v)
-
+    
 # Shuffle queries
+uniq_queries = list(set(queries))
 seed=91500
 random.seed(seed)
-random.shuffle(queries)
+random.shuffle(uniq_queries)
 
 # Split
-dev_queries = queries[:args.dev_size]
-train_queries = queries[args.dev_size:]
+dev_queries = uniq_queries[:args.dev_size]
+train_queries = uniq_queries[args.dev_size:]
 
 # Write
 if not os.path.exists(args.dir_out):
