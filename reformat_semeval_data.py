@@ -21,7 +21,7 @@ if not os.path.exists(args.dir_out):
 
 # Copy candidates
 path_cand = os.path.join(args.dir_data, "vocabulary/{}.vocabulary.txt".format(subtask_name))
-dst = os.path.join(args.dir_out, "{}.candidates.txt".format(args.subtask))
+dst = os.path.join(args.dir_out, "candidates.txt".format(args.subtask))
 shutil.copyfile(path_cand, dst)
 
 # Reformat queries and gold hypernyms
