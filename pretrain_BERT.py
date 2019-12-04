@@ -532,6 +532,9 @@ def main():
     if args.local_rank == 0:
         torch.distributed.barrier()  # End of barrier to make sure only the first process in distributed training download model & vocab
 
+    # Save tokenizer before we start training
+    tokenizer.save_pretrained(args.output_dir)
+        
     logger.info("Training/evaluation parameters %s", args)
 
     # Training
