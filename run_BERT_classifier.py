@@ -56,6 +56,7 @@ from transformers import (WEIGHTS_NAME, BertConfig,
                           AlbertTokenizer,
 )
 from transformers.data.processors.utils import InputExample
+from transformers import glue_convert_examples_to_features as convert_examples_to_features
 from transformers import AdamW, get_linear_schedule_with_warmup
 from sklearn.metrics import f1_score
 
@@ -280,7 +281,7 @@ def evaluate(args, model, tokenizer, label_list, prefix=""):
     return results
 
 
-def create_examples(path_queries, path_candidates, set_type, path_gold=None):
+def create_examples(args, path_queries, path_candidates, set_type, path_gold=None):
     if set_type not in ["train", "dev", "test"]:
         raise ValueError("unrecognized set_type '{}'".format(set_type))
     if path_gold is None:
@@ -299,7 +300,7 @@ def create_examples(path_queries, path_candidates, set_type, path_gold=None):
     with open(path_queries) as fq, open(path_gold) as fg:
         for line in fq:
             query = line.strip()
-            gold = fg.next().strip()
+            gold = fg.readline().strip()
             if query not in pos:
                 pos[query] = []
             pos[query].append(gold)
@@ -334,18 +335,18 @@ def create_examples(path_queries, path_candidates, set_type, path_gold=None):
                 examples.append(InputExample(guid=guid, text_a=q, text_b=h, label=label))
     return examples
 
-def get_train_examples(data_dir):
+def get_train_examples(args, data_dir):
     path_queries = os.path.join(data_dir, "train.queries.txt")
     path_gold = os.path.join(data_dir, "train.gold.txt")
     path_candidates = os.path.join(data_dir, "candidates.txt")
-    logger.info("LOOKING AT {}".format(path))
-    return create_examples(path_queries, path_candidates, "train", path_gold=path_gold)
+    logger.info("LOOKING AT {}".format(data_dir))
+    return create_examples(args, path_queries, path_candidates, "train", path_gold=path_gold)
 
-def get_dev_examples(data_dir):
+def get_dev_examples(args, data_dir):
     path_queries = os.path.join(data_dir, "dev.queries.txt")
     path_gold = os.path.join(data_dir, "dev.gold.txt")
     path_candidates = os.path.join(data_dir, "candidates.txt")
-    return create_examples(path_queries, path_candidates, "dev", path_gold=path_gold)
+    return create_examples(args, path_queries, path_candidates, "dev", path_gold=path_gold)
 
 def load_and_cache_examples(args, tokenizer, label_list, evaluate=False):
     if args.local_rank not in [-1, 0] and not evaluate:
@@ -361,16 +362,17 @@ def load_and_cache_examples(args, tokenizer, label_list, evaluate=False):
         features = torch.load(cached_features_file)
     else:
         logger.info("Creating features from dataset file at %s", args.data_dir)
-        examples = get_dev_examples(args.data_dir) if evaluate else get_train_examples(args.data_dir)
+        examples = get_dev_examples(args, args.data_dir) if evaluate else get_train_examples(args, args.data_dir)
         features = convert_examples_to_features(examples,
                                                 tokenizer,
                                                 label_list=label_list,
                                                 max_length=args.max_seq_length,
-                                                output_mode=output_mode,
+                                                output_mode=args.output_mode,
                                                 pad_on_left=bool(args.model_type in ['xlnet']),                 # pad on the left for xlnet
                                                 pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
                                                 pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0,
         )
+        sys.exit()
         if args.local_rank in [-1, 0]:
             logger.info("Saving features into cached file %s", cached_features_file)
             torch.save(features, cached_features_file)
@@ -537,7 +539,6 @@ def main():
         train_dataset = load_and_cache_examples(args, tokenizer, label_list, evaluate=False)
         global_step, tr_loss = train(args, train_dataset, model, tokenizer, label_list)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
-
 
     # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
     if args.do_train and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
