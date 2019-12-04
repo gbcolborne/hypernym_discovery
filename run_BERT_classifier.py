@@ -31,7 +31,7 @@ import torch
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
-from transformers.
+
 try:
     from torch.utils.tensorboard import SummaryWriter
 except:
@@ -40,21 +40,21 @@ except:
 from tqdm import tqdm, trange
 
 from transformers import (WEIGHTS_NAME, BertConfig,
-                                  BertForSequenceClassification, BertTokenizer,
-                                  RobertaConfig,
-                                  RobertaForSequenceClassification,
-                                  RobertaTokenizer,
-                                  XLMConfig, XLMForSequenceClassification,
-                                  XLMTokenizer, XLNetConfig,
-                                  XLNetForSequenceClassification,
-                                  XLNetTokenizer,
-                                  DistilBertConfig,
-                                  DistilBertForSequenceClassification,
-                                  DistilBertTokenizer,
-                                  AlbertConfig,
-                                  AlbertForSequenceClassification, 
-                                  AlbertTokenizer,
-                                )
+                          BertForSequenceClassification, BertTokenizer,
+                          RobertaConfig,
+                          RobertaForSequenceClassification,
+                          RobertaTokenizer,
+                          XLMConfig, XLMForSequenceClassification,
+                          XLMTokenizer, XLNetConfig,
+                          XLNetForSequenceClassification,
+                          XLNetTokenizer,
+                          DistilBertConfig,
+                          DistilBertForSequenceClassification,
+                          DistilBertTokenizer,
+                          AlbertConfig,
+                          AlbertForSequenceClassification, 
+                          AlbertTokenizer,
+)
 from transformers.data.processors.utils import InputExample
 from transformers import AdamW, get_linear_schedule_with_warmup
 from sklearn.metrics import f1_score
@@ -216,139 +216,136 @@ def train(args, train_dataset, model, tokenizer, label_list):
 
 
 def evaluate(args, model, tokenizer, label_list, prefix=""):
-
     results = {}
-	eval_dataset = load_and_cache_examples(args, tokenizer, label_list, evaluate=True)
+    eval_dataset = load_and_cache_examples(args, tokenizer, label_list, evaluate=True)
 
     if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
         os.makedirs(args.output_dir)
 
-	args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
-	# Note that DistributedSampler samples randomly
-	eval_sampler = SequentialSampler(eval_dataset)
-	eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
+    args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+    # Note that DistributedSampler samples randomly
+    eval_sampler = SequentialSampler(eval_dataset)
+    eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
+        
+    # multi-gpu eval
+    if args.n_gpu > 1:
+        model = torch.nn.DataParallel(model)
 
-	# multi-gpu eval
-	if args.n_gpu > 1:
-		model = torch.nn.DataParallel(model)
+    # Eval!
+    logger.info("***** Running evaluation {} *****".format(prefix))
+    logger.info("  Num examples = %d", len(eval_dataset))
+    logger.info("  Batch size = %d", args.eval_batch_size)
+    eval_loss = 0.0
+    nb_eval_steps = 0
+    preds = None
+    out_label_ids = None
+    for batch in tqdm(eval_dataloader, desc="Evaluating"):
+        model.eval()
+        batch = tuple(t.to(args.device) for t in batch)
 
-	# Eval!
-	logger.info("***** Running evaluation {} *****".format(prefix))
-	logger.info("  Num examples = %d", len(eval_dataset))
-	logger.info("  Batch size = %d", args.eval_batch_size)
-	eval_loss = 0.0
-	nb_eval_steps = 0
-	preds = None
-	out_label_ids = None
-	for batch in tqdm(eval_dataloader, desc="Evaluating"):
-		model.eval()
-		batch = tuple(t.to(args.device) for t in batch)
+        with torch.no_grad():
+            inputs = {'input_ids':      batch[0],
+                      'attention_mask': batch[1],
+                      'labels':         batch[3]}
+            if args.model_type != 'distilbert':
+                inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
+            outputs = model(**inputs)
+            tmp_eval_loss, logits = outputs[:2]
 
-		with torch.no_grad():
-			inputs = {'input_ids':      batch[0],
-					  'attention_mask': batch[1],
-					  'labels':         batch[3]}
-			if args.model_type != 'distilbert':
-				inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
-			outputs = model(**inputs)
-			tmp_eval_loss, logits = outputs[:2]
+            eval_loss += tmp_eval_loss.mean().item()
+        nb_eval_steps += 1
+        if preds is None:
+            preds = logits.detach().cpu().numpy()
+            out_label_ids = inputs['labels'].detach().cpu().numpy()
+        else:
+            preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+            out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
 
-			eval_loss += tmp_eval_loss.mean().item()
-		nb_eval_steps += 1
-		if preds is None:
-			preds = logits.detach().cpu().numpy()
-			out_label_ids = inputs['labels'].detach().cpu().numpy()
-		else:
-			preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-			out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
+    eval_loss = eval_loss / nb_eval_steps
 
-	eval_loss = eval_loss / nb_eval_steps
-
-	preds = np.argmax(preds, axis=1)
+    preds = np.argmax(preds, axis=1)
 	
-	result = {}
-	result["acc"] = (preds == out_label_ids).mean()
-	result["f1"] = f1_score(y_true=out_label_ids, y_pred=preds)
-	results.update(result)
+    result = {}
+    result["acc"] = (preds == out_label_ids).mean()
+    result["f1"] = f1_score(y_true=out_label_ids, y_pred=preds)
+    results.update(result)
 
-	output_eval_file = os.path.join(args.output_dir, prefix, "eval_results.txt")
-	with open(output_eval_file, "w") as writer:
-		logger.info("***** Eval results {} *****".format(prefix))
-		for key in sorted(result.keys()):
-			logger.info("  %s = %s", key, str(result[key]))
-			writer.write("%s = %s\n" % (key, str(result[key])))
+    output_eval_file = os.path.join(args.output_dir, prefix, "eval_results.txt")
+    with open(output_eval_file, "w") as writer:
+        logger.info("***** Eval results {} *****".format(prefix))
+        for key in sorted(result.keys()):
+            logger.info("  %s = %s", key, str(result[key]))
+            writer.write("%s = %s\n" % (key, str(result[key])))
 
     return results
 
 
 def create_examples(path_queries, path_candidates, set_type, path_gold=None):
-	if set_type not in ["train", "dev", "test"]:
-		raise ValueError("unrecognized set_type '{}'".format(set_type))
-	if path_gold is None:
-		raise NotImplementedError("for now, gold labels must be provided")
+    if set_type not in ["train", "dev", "test"]:
+        raise ValueError("unrecognized set_type '{}'".format(set_type))
+    if path_gold is None:
+        raise NotImplementedError("for now, gold labels must be provided")
 	
-	# Load candidates
-	with open(path_candidates) as f:
-		candidates = []
-		for line in f:
-			candidate = line.strip()
-			candidates.append(candidate)
-	nb_candidates = len(candidates)
+    # Load candidates
+    with open(path_candidates) as f:
+        candidates = []
+        for line in f:
+            candidate = line.strip()
+            candidates.append(candidate)
+    nb_candidates = len(candidates)
 	
-	# Load queries and gold hypernyms
-	pos = {}
-	with open(path_queries) as fq, open(path_gold) as fg:
+    # Load queries and gold hypernyms
+    pos = {}
+    with open(path_queries) as fq, open(path_gold) as fg:
         for line in fq:
-			query = line.strip()
-			gold = fg.next().strip()
-			if query not in pos:
-				pos[query] = []
-			pos[query].append(gold)
+            query = line.strip()
+            gold = fg.next().strip()
+            if query not in pos:
+                pos[query] = []
+            pos[query].append(gold)
 
-	# Sample negative examples
+    # Sample negative examples
     neg = {}
-	buffer_size = 1000000
-	# Sample a bunch of indices at once to save time on generating random candidate indices
-	sampled_indices = np.random.randint(nb_candidates, size=buffer_size)
-	i = 0
-	for q in pos:
-		neg[q] = []
-		nb_neg_examples = args.per_query_nb_examples - len(pos[q])
-		nb_added = 0
-		while nb_added < nb_neg_examples:
-			sampled_index = sampled_indices[i]
-			i += 1 
-			if i == buffer_size:
-				# Sample more indices
-				sampled_indices = np.random.randint(nb_candidates, size=buffer_size)
-				i = 0	
-			if candidates[sampled_index] not in pos[q]:
-				neg[q].append(candidates[sampled_index])
-				nb_added += 1
+    buffer_size = 1000000
+    # Sample a bunch of indices at once to save time on generating random candidate indices
+    sampled_indices = np.random.randint(nb_candidates, size=buffer_size)
+    i = 0
+    for q in pos:
+        neg[q] = []
+        nb_neg_examples = args.per_query_nb_examples - len(pos[q])
+        nb_added = 0
+        while nb_added < nb_neg_examples:
+            sampled_index = sampled_indices[i]
+            i += 1 
+            if i == buffer_size:
+                # Sample more indices
+                sampled_indices = np.random.randint(nb_candidates, size=buffer_size)
+                i = 0	
+            if candidates[sampled_index] not in pos[q]:
+                neg[q].append(candidates[sampled_index])
+                nb_added += 1
 				
-	# Create imput examples
-	examples = []
-	for q in pos:
-		for (label, hlist) in [(1,pos[q]),(0,neg[q])]:
-			for h in hlist:
-				guid = "%s-%s" % (set_type, len(examples)+1)
-				examples.append(InputExample(guid=guid, text_a=q, text_b=h, label=label))
-	return examples
+    # Create imput examples
+    examples = []
+    for q in pos:
+        for (label, hlist) in [(1,pos[q]),(0,neg[q])]:
+            for h in hlist:
+                guid = "%s-%s" % (set_type, len(examples)+1)
+                examples.append(InputExample(guid=guid, text_a=q, text_b=h, label=label))
+    return examples
 
 def get_train_examples(data_dir):
-	path_queries = os.path.join(data_dir, "train.queries.txt")
-	path_gold = os.path.join(data_dir, "train.gold.txt")
-	path_candidates = os.path.join(data_dir, "candidates.txt")
+    path_queries = os.path.join(data_dir, "train.queries.txt")
+    path_gold = os.path.join(data_dir, "train.gold.txt")
+    path_candidates = os.path.join(data_dir, "candidates.txt")
     logger.info("LOOKING AT {}".format(path))
-	return create_examples(path_queries, path_candidates, "train", path_gold=path_gold)
+    return create_examples(path_queries, path_candidates, "train", path_gold=path_gold)
 
 def get_dev_examples(data_dir):
-	path_queries = os.path.join(data_dir, "dev.queries.txt")
-	path_gold = os.path.join(data_dir, "dev.gold.txt")
-	path_candidates = os.path.join(data_dir, "candidates.txt")
-	return create_examples(path_queries, path_candidates, "dev", path_gold=path_gold)
-	
-
+    path_queries = os.path.join(data_dir, "dev.queries.txt")
+    path_gold = os.path.join(data_dir, "dev.gold.txt")
+    path_candidates = os.path.join(data_dir, "candidates.txt")
+    return create_examples(path_queries, path_candidates, "dev", path_gold=path_gold)
 
 def load_and_cache_examples(args, tokenizer, label_list, evaluate=False):
     if args.local_rank not in [-1, 0] and not evaluate:
@@ -385,7 +382,7 @@ def load_and_cache_examples(args, tokenizer, label_list, evaluate=False):
     all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
     all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
     all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
-	all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
+    all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
 
     dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
     return dataset
@@ -423,8 +420,8 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
 
-	parser.add_argument("--per_query_nb_examples", default=50, type=int, 
-						help="Nb training examples per training query. Nb negative examples is obtained by subtracting the number of positive examples for a given query.")
+    parser.add_argument("--per_query_nb_examples", default=50, type=int, 
+			help="Nb training examples per training query. Nb negative examples is obtained by subtracting the number of positive examples for a given query.")
     parser.add_argument("--per_gpu_train_batch_size", default=8, type=int,
                         help="Batch size per GPU/CPU for training.")
     parser.add_argument("--per_gpu_eval_batch_size", default=8, type=int,
