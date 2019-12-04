@@ -50,8 +50,8 @@ for part in ["training", "trial", "test"]:
 
     # Write queries and hypernyms, one per line, duplicating queries
     # for each of their hypernyms
-    path_out_q = os.path.join(args.dir_out, "{}.{}.queries.txt".format(args.subtask, part))
-    path_out_g = os.path.join(args.dir_out, "{}.{}.gold.txt".format(args.subtask, part))
+    path_out_q = os.path.join(args.dir_out, "{}.queries.txt".format(part))
+    path_out_g = os.path.join(args.dir_out, "{}.gold.txt".format(part))
     with open(path_out_q, 'w') as fq, open(path_out_g, 'w') as fg:
         for i in range(len(queries)):
             nb_hyps = len(gold[i])
