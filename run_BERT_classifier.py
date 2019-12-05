@@ -337,7 +337,12 @@ def predict(args, model, tokenizer, label_list):
     pred_class = np.argmax(preds, axis=1)
     pred_prob = preds[:,1]
 
-    # Map test queries to a list of (candidate, probability, predicted class, true class) tuples. While we're at it, write probabilities for all candidates for each test query. Note: this block assumes that the DataLoader is sequential, that is we assume we receive the model outputs in the same order as the input test examples provided to the sampler and loader.
+    # Map test queries to a list of (candidate, probability, predicted
+    # class, true class) tuples. While we're at it, write
+    # probabilities for all candidates for each test query. Note: this
+    # block assumes that the DataLoader is sequential, that is we
+    # assume we receive the model outputs in the same order as the
+    # input test examples provided to the sampler and loader.
     test_queries = [example.text_a for example in test_examples]
     q2data = {}
     path = os.path.join(args.output_dir, "test_probs.tsv")
@@ -354,7 +359,9 @@ def predict(args, model, tokenizer, label_list):
             q2data[q].append((c, prob, ypred, ytrue))
             f.write("{}\t{}\t{}\n".format(q,c,prob))
 
-    # Write and log top k candidates for each test query. If we have the gold labels, evaluate ranking of candidates wrt gold hypernyms. 
+    # Write and log top k candidates for each test query. If we have
+    # the gold labels, evaluate ranking of candidates wrt gold
+    # hypernyms.
     k = 15
     path_c = os.path.join(args.output_dir, "test_top15_candidates.tsv")
     path_p = os.path.join(args.output_dir, "test_top15_probabilities.tsv")
