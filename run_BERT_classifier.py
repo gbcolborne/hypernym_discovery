@@ -56,7 +56,7 @@ from transformers import (WEIGHTS_NAME, BertConfig,
                                   AlbertConfig,
                                   AlbertForSequenceClassification, 
                                   AlbertTokenizer,
-                                )
+                          )
 from transformers.data.processors.utils import InputExample
 from transformers import AdamW, get_linear_schedule_with_warmup
 from sklearn.metrics import f1_score, average_precision_score
@@ -256,7 +256,7 @@ def evaluate(args, model, tokenizer, label_list, prefix=""):
 	    outputs = model(**inputs)
 	    tmp_eval_loss, logits = outputs[:2]
 	    eval_loss += tmp_eval_loss.mean().item()
-	nb_eval_steps += 1q
+	nb_eval_steps += 1
 	if preds is None:
 	    preds = logits.detach().cpu().numpy()
 	    out_label_ids = inputs['labels'].detach().cpu().numpy()
@@ -266,7 +266,6 @@ def evaluate(args, model, tokenizer, label_list, prefix=""):
                                       inputs['labels'].detach().cpu().numpy(),
                                       axis=0)
     eval_loss = eval_loss / nb_eval_steps
-    y_pred = np.argmax(preds, axis=1)
 
     # This function assumes the rows in preds are in the same order as
     # the examples, which is why we had to use a sequential data
@@ -276,6 +275,7 @@ def evaluate(args, model, tokenizer, label_list, prefix=""):
     # Compute evaluation metrics
     result = {}
     # Evaluate classification accuracy
+    y_pred = np.argmax(preds, axis=1)
     result["acc"] = (y_pred==out_label_ids).mean()
     result["f1"] = f1_score(y_true=out_label_ids, y_pred=y_pred)
     # Evaluate per-query ranking of candidates (which are limited to
