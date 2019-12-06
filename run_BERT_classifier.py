@@ -25,6 +25,7 @@ import logging
 import os
 import random
 import json
+from collections import OrderedDict
 
 import numpy as np
 import torch
@@ -217,93 +218,101 @@ def train(args, train_dataset, model, tokenizer, label_list):
 
 def evaluate(args, model, tokenizer, label_list, prefix=""):
     """ Evaluate on dev set. """
-
+    
     results = {}
-	eval_dataset = load_and_cache_examples(args, tokenizer, label_list, set_type='dev')
-
+    eval_examples = load_and_cache_examples(args, 'dev')
+    eval_dataset = load_and_cache_features(args, tokenizer, label_list, 'dev')
+    
     if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
         os.makedirs(args.output_dir)
+        
+    args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+    eval_sampler = SequentialSampler(eval_dataset) # MUST BE SEQUENTIAL!
+    eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
+    
+    # multi-gpu eval
+    if args.n_gpu > 1:
+	model = torch.nn.DataParallel(model)
+        
+    # Eval!
+    logger.info("***** Running evaluation {} *****".format(prefix))
+    logger.info("  Num examples = %d", len(eval_dataset))
+    logger.info("  Batch size = %d", args.eval_batch_size)
+    eval_loss = 0.0
+    nb_eval_steps = 0
+    preds = None
+    out_label_ids = None
+    for batch in tqdm(eval_dataloader, desc="Evaluating"):
+	model.eval()
+	batch = tuple(t.to(args.device) for t in batch)
+        
+	with torch.no_grad():
+	    inputs = {'input_ids':      batch[0],
+		      'attention_mask': batch[1],
+		      'labels':         batch[3]}
+	    if args.model_type != 'distilbert':
+		inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
+	    outputs = model(**inputs)
+	    tmp_eval_loss, logits = outputs[:2]
+	    eval_loss += tmp_eval_loss.mean().item()
+	nb_eval_steps += 1q
+	if preds is None:
+	    preds = logits.detach().cpu().numpy()
+	    out_label_ids = inputs['labels'].detach().cpu().numpy()
+	else:
+	    preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+	    out_label_ids = np.append(out_label_ids,
+                                      inputs['labels'].detach().cpu().numpy(),
+                                      axis=0)
+    eval_loss = eval_loss / nb_eval_steps
+    y_pred = np.argmax(preds, axis=1)
 
-	args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
-	eval_sampler = SequentialSampler(eval_dataset)
-	eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
+    # This function assumes the rows in preds are in the same order as
+    # the examples, which is why we had to use a sequential data
+    # loader.
+    q2data = map_queries_to_pred(test_examples, preds) 
 
-	# multi-gpu eval
-	if args.n_gpu > 1:
-		model = torch.nn.DataParallel(model)
-
-	# Eval!
-	logger.info("***** Running evaluation {} *****".format(prefix))
-	logger.info("  Num examples = %d", len(eval_dataset))
-	logger.info("  Batch size = %d", args.eval_batch_size)
-	eval_loss = 0.0
-	nb_eval_steps = 0
-	preds = None
-	out_label_ids = None
-	for batch in tqdm(eval_dataloader, desc="Evaluating"):
-		model.eval()
-		batch = tuple(t.to(args.device) for t in batch)
-
-		with torch.no_grad():
-			inputs = {'input_ids':      batch[0],
-					  'attention_mask': batch[1],
-					  'labels':         batch[3]}
-			if args.model_type != 'distilbert':
-				inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
-			outputs = model(**inputs)
-			tmp_eval_loss, logits = outputs[:2]
-
-			eval_loss += tmp_eval_loss.mean().item()
-		nb_eval_steps += 1
-		if preds is None:
-			preds = logits.detach().cpu().numpy()
-			out_label_ids = inputs['labels'].detach().cpu().numpy()
-		else:
-			preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-			out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-
-	eval_loss = eval_loss / nb_eval_steps
-
-	preds = np.argmax(preds, axis=1)
-	
-	result = {}
-	result["acc"] = (preds == out_label_ids).mean()
-	result["f1"] = f1_score(y_true=out_label_ids, y_pred=preds)
-	results.update(result)
-
-	output_eval_file = os.path.join(args.output_dir, prefix, "eval_results.txt")
-	with open(output_eval_file, "w") as writer:
-		logger.info("***** Eval results {} *****".format(prefix))
-		for key in sorted(result.keys()):
-			logger.info("  %s = %s", key, str(result[key]))
-			writer.write("%s = %s\n" % (key, str(result[key])))
-
+    # Compute evaluation metrics
+    result = {}
+    # Evaluate classification accuracy
+    result["acc"] = (y_pred==out_label_ids).mean()
+    result["f1"] = f1_score(y_true=out_label_ids, y_pred=y_pred)
+    # Evaluate per-query ranking of candidates (which are limited to
+    # the positive examples and a small sample of negative examples --
+    # evaluating on all candidates at each validation step would be
+    # much more expensive)
+    k = 15
+    ap_values = []
+    for i,q in enumerate(q2data.keys()):
+        topk = sorted(q2data[q], key=lambda (c,p,yp,yt):p, reverse=True)[:k]
+        y_true = [yt for (c,p,yp,yt) in topk]
+        y_score = [p for (c,p,yp,yt) in topk]
+        ap = average_precision_score(y_true=y_true, y_score=y_score)
+        ap_values.append(ap)
+    result["MAP"] = np.mean(ap_values)
+    results.update(result)
+    
+    output_eval_file = os.path.join(args.output_dir, prefix, "eval_results.txt")
+    with open(output_eval_file, "w") as writer:
+	logger.info("***** Eval results {} *****".format(prefix))
+	for key in sorted(result.keys()):
+	    logger.info("  %s = %s", key, str(result[key]))
+	    writer.write("%s = %s\n" % (key, str(result[key])))
+            
     return results
+
 
 def predict(args, model, tokenizer, label_list):
     """ Run prediction on test set. """
 
-    # Check if gold labels are available
-    path_gold = os.path.join(args.data_dir, "test.gold.txt")
-    gold_available = os.path.exists(path_gold)
-
     # Get test data
-    logger.info("Creating features from test set at %s", args.data_dir)
-    test_examples = get_test_examples(args.data_dir, gold_available=gold_available)
-    features = convert_examples_to_features(test_examples,
-                                            tokenizer,
-                                            label_list=label_list,
-                                            max_length=args.max_seq_length,
-                                            output_mode=args.output_mode,
-                                            pad_on_left=bool(args.model_type in ['xlnet']),                 # pad on the left for xlnet
-                                            pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-                                            pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0,
-    )
-    eval_dataset = convert_features_to_tensor(features)
+    test_examples = load_and_cache_examples(args.data_dir, 'test')
+    eval_dataset = load_and_cache_features(args, tokenizer, label_list, 'test')
+
     if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
         os.makedirs(args.output_dir)
     args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
-    eval_sampler = SequentialSampler(eval_dataset)
+    eval_sampler = SequentialSampler(eval_dataset) # MUST BE SEQUENTIAL!
     eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
     # multi-gpu eval
@@ -334,31 +343,20 @@ def predict(args, model, tokenizer, label_list):
         else:
             preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
             out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-    pred_class = np.argmax(preds, axis=1)
-    pred_prob = preds[:,1]
 
-    # Map test queries to a list of (candidate, probability, predicted
-    # class, true class) tuples. While we're at it, write
-    # probabilities for all candidates for each test query. Note: this
-    # block assumes that the DataLoader is sequential, that is we
-    # assume we receive the model outputs in the same order as the
-    # input test examples provided to the sampler and loader.
-    test_queries = [example.text_a for example in test_examples]
-    q2data = {}
+    # This function assumes the rows in preds are in the same order as
+    # the examples, which is why we had to use a sequential data
+    # loader.
+    q2data = map_queries_to_pred(test_examples, preds) 
+            
+    # Write probabilities for all candidates for each test query.
     path = os.path.join(args.output_dir, "test_probs.tsv")
     logger.info("Writing candidate probabilities for each query to {}".format(path))
     with open(path, 'w') as f:
-        for i in range(len(test_examples)):
-            q = test_examples[i].text_a
-            c = test_examples[i].text_b
-            ytrue = test_examples[i].label
-            ypred = pred_class[i]
-            prob = pred_prob[i]
-            if q not in q2data:
-                q2data[q] = []
-            q2data[q].append((c, prob, ypred, ytrue))
-            f.write("{}\t{}\t{}\n".format(q,c,prob))
-
+        for q in q2data.keys():
+            for (c, p, yp, yt) in q2data[q]:
+                f.write("{}\t{}\t{}\n".format(q, c, p))
+                
     # Write and log top k candidates for each test query. If we have
     # the gold labels, evaluate ranking of candidates wrt gold
     # hypernyms.
@@ -372,7 +370,7 @@ def predict(args, model, tokenizer, label_list):
         logger.info("  Evaluating ranking of candidates wrt gold hypernyms in {}".format(path_gold))
         ap_values = []
     with open(path_c, 'w') as fc, open(path_p, 'w') as fp:
-        for i,q in enumerate(test_queries):
+        for i,q in enumerate(q2data.keys()):
             topk = sorted(q2data[q], key=lambda (c,p,yp,yt):p, reverse=True)[:k]
             topk_string = ', '.join(["('{}',{:.5f})".format(c,p) for (c,p,yp,yt) in topk])
             logger.info("{}. Top candidates for '{}': {}".format(i+1, q, topk_string))
@@ -394,7 +392,9 @@ def predict(args, model, tokenizer, label_list):
         for ap in ap_values:
             writer.write("{:.5f}\n".format(ap))
 
-    # Return evaluation results. To have a similar output as the evaluate function, we will return a dict of results containing a single dict with all our results.
+    # Return evaluation results. To have a similar output as the
+    # evaluate function, we will return a dict of results containing a
+    # single dict with all our results.
     results = {}
     result = {}
     result["ap"] = ap_values
@@ -405,19 +405,44 @@ def predict(args, model, tokenizer, label_list):
 
     return results
 
+
+def map_queries_to_pred(examples, probs):
+    """Given a list of n examples, and a nX2 matrix of class
+    probabilities, create an OrderedDict that maps queries to a list
+    of (candidate, probability, predicted class, true class) tuples.
+    Note: we assume the rows in probs are in the same order as the
+    examples.
+
+    """
+    logger.info("Mapping queries to candidate probabilities")
+    pred_class = np.argmax(probs, axis=1)
+    pred_prob = probs[:,1]
+    q2data = OrderedDict()
+    for i in range(len(examples)):
+        q = examples[i].text_a
+        c = examples[i].text_b
+        ytrue = examples[i].label
+        ypred = pred_class[i]
+        prob = pred_prob[i]
+        if q not in q2data:
+            q2data[q] = []
+        q2data[q].append((c, prob, ypred, ytrue))
+    return q2data
+
+
 def create_examples(path_queries, path_candidates, set_type, path_gold=None):
-	if set_type not in ["train", "dev", "test"]:
-		raise ValueError("unrecognized set_type '{}'".format(set_type))
-	if path_gold is None and set_type != 'test':
-		raise ValueError("path_gold must be provided")
+    if set_type not in ["train", "dev", "test"]:
+	raise ValueError("unrecognized set_type '{}'".format(set_type))
+    if path_gold is None and set_type != 'test':
+	raise ValueError("path_gold must be provided")
 	
-	# Load candidates
-	with open(path_candidates) as f:
-		candidates = []
-		for line in f:
-			candidate = line.strip()
-			candidates.append(candidate)
-	nb_candidates = len(candidates)
+    # Load candidates
+    with open(path_candidates) as f:
+	candidates = []
+	for line in f:
+	    candidate = line.strip()
+	    candidates.append(candidate)
+    nb_candidates = len(candidates)
 	
     # Load queries
     queries = []
@@ -426,16 +451,16 @@ def create_examples(path_queries, path_candidates, set_type, path_gold=None):
             query = line.split()
             queries.append(query)
 
-	# Load gold hypernyms
-	pos = dict([] for q in set(queries))
+    # Load gold hypernyms
+    pos = dict([] for q in set(queries))
     if path_gold:
-	   with open(path_gold) as fg:
+	with open(path_gold) as fg:
             for i,line in enumerate(fg):
                 gold = line.strip()
                 query = queries[i]
                 pos[query].append(gold)
 
-	# Identify or sample negative examples
+    # Identify or sample negative examples
     neg = {}
     if set_type == 'test':
         all_candidate_indices = list(range(nb_candidates))
@@ -451,7 +476,7 @@ def create_examples(path_queries, path_candidates, set_type, path_gold=None):
         i = 0
         for q in pos:
             neg[q] = []
-            nb_neg_examples = args.per_query_nb_examples - len(pos[q])
+            nb_neg_examples = min(0, args.per_query_nb_examples-len(pos[q]))
             nb_added = 0
             while nb_added < nb_neg_examples:
                 sampled_index = sampled_indices[i]
@@ -461,30 +486,30 @@ def create_examples(path_queries, path_candidates, set_type, path_gold=None):
                     sampled_indices = np.random.randint(nb_candidates, size=buffer_size)
                     i = 0	
                 if candidates[sampled_index] not in pos[q]:
-				    neg[q].append(candidates[sampled_index])
-				    nb_added += 1
+		    neg[q].append(candidates[sampled_index])
+		    nb_added += 1
 				
-	# Create input examples
-	examples = []
-	for q in pos:
-		for (label, hlist) in [(1,pos[q]),(0,neg[q])]:
-			for h in hlist:
-				guid = "%s-%s" % (set_type, len(examples)+1)
-				examples.append(InputExample(guid=guid, text_a=q, text_b=h, label=label))
-	return examples
+    # Create input examples
+    examples = []
+    for q in pos:
+	for (label, hlist) in [(1,pos[q]),(0,neg[q])]:
+	    for h in hlist:
+		guid = "%s-%s" % (set_type, len(examples)+1)
+		examples.append(InputExample(guid=guid, text_a=q, text_b=h, label=label))
+    return examples
 
 def get_train_examples(data_dir):
-	path_queries = os.path.join(data_dir, "train.queries.txt")
-	path_gold = os.path.join(data_dir, "train.gold.txt")
-	path_candidates = os.path.join(data_dir, "candidates.txt")
+    path_queries = os.path.join(data_dir, "train.queries.txt")
+    path_gold = os.path.join(data_dir, "train.gold.txt")
+    path_candidates = os.path.join(data_dir, "candidates.txt")
     logger.info("LOOKING AT {}".format(path))
-	return create_examples(path_queries, path_candidates, "train", path_gold=path_gold)
+    return create_examples(path_queries, path_candidates, "train", path_gold=path_gold)
 
 def get_dev_examples(data_dir):
-	path_queries = os.path.join(data_dir, "dev.queries.txt")
-	path_gold = os.path.join(data_dir, "dev.gold.txt")
-	path_candidates = os.path.join(data_dir, "candidates.txt")
-	return create_examples(path_queries, path_candidates, "dev", path_gold=path_gold)
+    path_queries = os.path.join(data_dir, "dev.queries.txt")
+    path_gold = os.path.join(data_dir, "dev.gold.txt")
+    path_candidates = os.path.join(data_dir, "candidates.txt")
+    return create_examples(path_queries, path_candidates, "dev", path_gold=path_gold)
 	
 def get_test_examples(data_dir, gold_available=False):
     path_queries = os.path.join(data_dir, "test.queries.txt")
@@ -495,15 +520,41 @@ def get_test_examples(data_dir, gold_available=False):
     path_candidates = os.path.join(data_dir, "candidates.txt")
     return create_examples(path_queries, path_candidates, "test", path_gold=path_gold)
 
+def load_and_cache_examples(args, set_type):
+    """Load and cache examples. Only used for dev and test sets, on
+    which we compute query-wise candidate ranking metrics.
 
-def load_and_cache_examples(args, tokenizer, label_list, set_type):
+    """
+    
+    if set_type not in ["dev", "test"]:
+        raise ValueError("Unrecognized set_type '{}'".format(set_type))
+    cached_examples_file = os.path.join(args.data_dir, 'cached_examples_{}.pkl'.format(set_type))
+    if os.path.exists(cached_examples_file) and not args.overwrite_cache:
+        logger.info("Loading examples from cached file %s", cached_examples_file)
+        examples = pickle.load(cached_examples_file)
+    else:
+        if set_type=='dev':
+            examples = get_dev_examples(args.data_dir)
+        elif set_type == 'test':
+            # Check if gold labels are available
+            path_gold = os.path.join(args.data_dir, "test.gold.txt")
+            gold_available = os.path.exists(path_gold)
+            examples = get_test_examples(args.data_dir, gold_available=gold_available)
+        logger.info("Saving examples into cached file %s", cached_examples_file)
+        with open(cached_examples_file, 'wb') as f:
+            pickle.dump(examples, f)
+    return examples
+
+def load_and_cache_features(args, tokenizer, label_list, set_type):
+    """Load and cache features. Only used for train and dev sets."""
+
     if set_type not in ["train", "dev"]:
         raise ValueError("Unrecognized set_type '{}'".format(set_type))
     if args.local_rank not in [-1, 0] and set_type=='train':
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_{}_{}_{}'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_features_{}_{}_{}'.format(
         set_type,
         list(filter(None, args.model_name_or_path.split('/'))).pop(),
         str(args.max_seq_length)))
@@ -575,8 +626,9 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
 
-	parser.add_argument("--per_query_nb_examples", default=50, type=int, 
-						help="Nb training examples per training query. Nb negative examples is obtained by subtracting the number of positive examples for a given query.")
+    parser.add_argument("--per_query_nb_examples", default=50, type=int, 
+			help=("Nb training examples per training query. "
+                              "Nb negative examples is obtained by subtracting the number of positive examples for a given query."))
     parser.add_argument("--per_gpu_train_batch_size", default=8, type=int,
                         help="Batch size per GPU/CPU for training.")
     parser.add_argument("--per_gpu_eval_batch_size", default=8, type=int,
@@ -689,7 +741,7 @@ def main():
 
     # Training
     if args.do_train:
-        train_dataset = load_and_cache_examples(args, tokenizer, label_list, set_type='train')
+        train_dataset = load_and_cache_features(args, tokenizer, label_list, 'train')
         global_step, tr_loss = train(args, train_dataset, model, tokenizer, label_list)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
