@@ -472,6 +472,7 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
                 neg[q] = filter(lambda x:x not in pos[q], all_candidate_indices)
     else:
         # Sample a bunch of indices at once to save time on generating random candidate indices
+        logger.info("Sampling negative examples with per_query_nb_examples={}".format(args.per_query_nb_examples))
         buffer_size = 1000000
         sampled_indices = np.random.randint(nb_candidates, size=buffer_size)
         i = 0
@@ -489,7 +490,11 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
                 if candidates[sampled_index] not in pos[q]:
                     neg[q].append(candidates[sampled_index])
                     nb_added += 1
-
+        nb_pos = sum(len(v) for k,v in pos.items())
+        nb_neg = sum(len(v) for k,v in neg.items())
+        logger.info("Nb positive examples: {}".format(nb_pos))
+        logger.info("Nb negative examples: {}".format(nb_neg))
+        
     # Create input examples
     examples = []
     for q in pos:
