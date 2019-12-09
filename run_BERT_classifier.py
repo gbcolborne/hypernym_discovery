@@ -286,7 +286,7 @@ def evaluate(args, model, tokenizer, label_list, prefix=""):
     k = 15
     ap_values = []
     for i,q in enumerate(q2data.keys()):
-        topk = sorted(q2data[q], key=lambda c,p,yp,yt:p, reverse=True)[:k]
+        topk = sorted(q2data[q], key=lambda x:x[1], reverse=True)[:k]
         y_true = [yt for (c,p,yp,yt) in topk]
         y_score = [p for (c,p,yp,yt) in topk]
         ap = average_precision_score(y_true=y_true, y_score=y_score)
@@ -372,7 +372,7 @@ def predict(args, model, tokenizer, label_list):
         ap_values = []
     with open(path_c, 'w') as fc, open(path_p, 'w') as fp:
         for i,q in enumerate(q2data.keys()):
-            topk = sorted(q2data[q], key=lambda c,p,yp,yt:p, reverse=True)[:k]
+            topk = sorted(q2data[q], key=lambda x:x[1], reverse=True)[:k]
             topk_string = ', '.join(["('{}',{:.5f})".format(c,p) for (c,p,yp,yt) in topk])
             logger.info("{}. Top candidates for '{}': {}".format(i+1, q, topk_string))
             fc.write("{}\n".format("\t".join([c for (c,p,yp,yt) in topk])))
