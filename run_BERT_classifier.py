@@ -223,8 +223,7 @@ def evaluate(args, model, tokenizer, label_list, prefix=""):
     """ Evaluate on dev set. """
     
     results = {}
-    eval_examples = load_and_cache_examples(args, 'dev')
-    eval_dataset = load_and_cache_features(args, tokenizer, label_list, 'dev')
+    eval_examples, eval_dataset = load_and_cache_examples(args, tokenizer, label_list, 'dev')
     
     if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
         os.makedirs(args.output_dir)
@@ -309,8 +308,7 @@ def predict(args, model, tokenizer, label_list):
     """ Run prediction on test set. """
 
     # Get test data
-    test_examples = load_and_cache_examples(args.data_dir, 'test')
-    eval_dataset = load_and_cache_features(args, tokenizer, label_list, 'test')
+    test_examples, eval_dataset = load_and_cache_examples(args, tokenizer, label_list, 'test')
 
     if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
         os.makedirs(args.output_dir)
@@ -528,54 +526,49 @@ def get_test_examples(args, gold_available=False):
     path_candidates = os.path.join(args.data_dir, "candidates.txt")
     return create_examples(args, path_queries, path_candidates, "test", path_gold=path_gold)
 
-def load_and_cache_examples(args, set_type):
-    """Load and cache examples. Only used for dev and test sets, on
-    which we compute query-wise candidate ranking metrics.
 
-    """
-    
-    if set_type not in ["dev", "test"]:
-        raise ValueError("Unrecognized set_type '{}'".format(set_type))
-    cached_examples_file = os.path.join(args.data_dir, 'cached_examples_{}.pkl'.format(set_type))
-    if os.path.exists(cached_examples_file) and not args.overwrite_cache:
-        logger.info("Loading examples from cached file %s", cached_examples_file)
-        examples = pickle.load(cached_examples_file)
-    else:
-        if set_type=='dev':
-            examples = get_dev_examples(args)
-        elif set_type == 'test':
-            # Check if gold labels are available
-            path_gold = os.path.join(args.data_dir, "test.gold.txt")
-            gold_available = os.path.exists(path_gold)
-            examples = get_test_examples(args, gold_available=gold_available)
-        logger.info("Saving examples into cached file %s", cached_examples_file)
-        with open(cached_examples_file, 'wb') as f:
-            pickle.dump(examples, f)
-    return examples
-
-def load_and_cache_features(args, tokenizer, label_list, set_type):
-    """Load and cache features. Only used for train and dev sets."""
-
-    if set_type not in ["train", "dev"]:
+def load_and_cache_examples(args, tokenizer, label_list, set_type):
+    """Load and cache examples and features."""
+    if set_type not in ["train", "dev", "test"]:
         raise ValueError("Unrecognized set_type '{}'".format(set_type))
     if args.local_rank not in [-1, 0] and set_type=='train':
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
-    # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_features_{}_{}_{}_{}'.format(
+    # Make file name for cached examples and features
+    suffix =  '{}_{}_{}_{}'.format(
         set_type,
         list(filter(None, args.model_name_or_path.split('/'))).pop(),
         str(args.max_seq_length),
-        args.per_query_nb_examples))
-    if os.path.exists(cached_features_file) and not args.overwrite_cache:
-        logger.info("Loading features from cached file %s", cached_features_file)
-        features = torch.load(cached_features_file)
+        args.per_query_nb_examples)
+    cached_examples_file = os.path.join(args.data_dir, 'cached_examples_{}'.format(suffix))
+    cached_features_file = os.path.join(args.data_dir, 'cached_features_{}'.format(suffix))
+
+    # Load examples from cache or dataset file
+    if os.path.exists(cached_examples_file) and not args.overwrite_cache:
+        logger.info("Loading examples from cached file %s", cached_examples_file)
+        examples = pickle.load(cached_examples_file)
     else:
-        logger.info("Creating features from %s set at %s", set_type, args.data_dir)
+        logger.info("Creating examples from %s set at %s", set_type, args.data_dir)
         if set_type=='train':
             examples = get_train_examples(args)
         elif set_type=='dev':
             examples = get_dev_examples(args)
+        elif set_type=='test':
+            # Check if gold labels are available
+            path_gold = os.path.join(args.data_dir, "test.gold.txt")
+            gold_available = os.path.exists(path_gold)
+            examples = get_test_examples(args, gold_available=gold_available)
+        if args.local_rank in [-1, 0]:
+            logger.info("Saving examples into cached file %s", cached_examples_file)
+            with open(cached_examples_file, 'wb') as f:
+                pickle.dump(examples, f)
+
+    # Load features from cache or dataset file        
+    if os.path.exists(cached_features_file) and not args.overwrite_cache:
+        logger.info("Loading features from cached file %s", cached_features_file)
+        features = torch.load(cached_features_file)
+    else:
+        logger.info("Creating features from %s set at %s", set_type, args.data_dir)        
         features = convert_examples_to_features(examples,
                                                 tokenizer,
                                                 label_list=label_list,
@@ -589,10 +582,12 @@ def load_and_cache_features(args, tokenizer, label_list, set_type):
             logger.info("Saving features into cached file %s", cached_features_file)
             torch.save(features, cached_features_file)
 
+    features = convert_features_to_tensor(features)
+    
     if args.local_rank == 0 and set_type=='train':
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
-    
-    return convert_features_to_tensor(features)
+
+    return examples, features
 
 def convert_features_to_tensor(features):
     all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
@@ -780,7 +775,7 @@ def main():
 
     # Training
     if args.do_train:
-        train_dataset = load_and_cache_features(args, tokenizer, label_list, 'train')
+        _, train_dataset = load_and_cache_examples(args, tokenizer, label_list, 'train')
         global_step, tr_loss = train(args, train_dataset, model, tokenizer, label_list)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
