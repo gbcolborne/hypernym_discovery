@@ -381,6 +381,9 @@ def predict(args, model, tokenizer, label_list):
                 y_true = [yt for (c,p,yp,yt) in topk]
                 y_score = [p for (c,p,yp,yt) in topk]
                 ap = average_precision_score(y_true=y_true, y_score=y_score)
+                if np.isnan:
+                    logger.warning("NaN resulted from computing AP(y_true={},y_score={})".format(y_true, y_score))
+                    sys.exit()
                 ap_values.append(ap)
 
     # If gold labels are not available, we are done
