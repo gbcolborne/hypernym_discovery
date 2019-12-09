@@ -272,7 +272,7 @@ def evaluate(args, model, tokenizer, label_list, prefix=""):
     # This function assumes the rows in preds are in the same order as
     # the examples, which is why we had to use a sequential data
     # loader.
-    q2data = map_queries_to_pred(test_examples, preds) 
+    q2data = map_queries_to_pred(eval_examples, preds) 
 
     # Compute evaluation metrics
     result = {}
@@ -562,10 +562,11 @@ def load_and_cache_features(args, tokenizer, label_list, set_type):
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
 
     # Load data features from cache or dataset file
-    cached_features_file = os.path.join(args.data_dir, 'cached_features_{}_{}_{}'.format(
+    cached_features_file = os.path.join(args.data_dir, 'cached_features_{}_{}_{}_{}'.format(
         set_type,
         list(filter(None, args.model_name_or_path.split('/'))).pop(),
-        str(args.max_seq_length)))
+        str(args.max_seq_length),
+        args.per_query_nb_examples))
     if os.path.exists(cached_features_file) and not args.overwrite_cache:
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
