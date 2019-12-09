@@ -546,7 +546,8 @@ def load_and_cache_examples(args, tokenizer, label_list, set_type):
     # Load examples from cache or dataset file
     if os.path.exists(cached_examples_file) and not args.overwrite_cache:
         logger.info("Loading examples from cached file %s", cached_examples_file)
-        examples = pickle.load(cached_examples_file)
+        with open(cached_examples_file, 'rb') as f:
+            examples = pickle.load(f)
     else:
         logger.info("Creating examples from %s set at %s", set_type, args.data_dir)
         if set_type=='train':
