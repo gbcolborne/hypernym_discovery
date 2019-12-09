@@ -33,32 +33,32 @@ import torch
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
-from transformers.
 try:
     from torch.utils.tensorboard import SummaryWriter
 except:
     from tensorboardX import SummaryWriter
-
+    
 from tqdm import tqdm, trange
 
 from transformers import (WEIGHTS_NAME, BertConfig,
-                                  BertForSequenceClassification, BertTokenizer,
-                                  RobertaConfig,
-                                  RobertaForSequenceClassification,
-                                  RobertaTokenizer,
-                                  XLMConfig, XLMForSequenceClassification,
-                                  XLMTokenizer, XLNetConfig,
-                                  XLNetForSequenceClassification,
-                                  XLNetTokenizer,
-                                  DistilBertConfig,
-                                  DistilBertForSequenceClassification,
-                                  DistilBertTokenizer,
-                                  AlbertConfig,
-                                  AlbertForSequenceClassification, 
-                                  AlbertTokenizer,
+                          BertForSequenceClassification, BertTokenizer,
+                          RobertaConfig,
+                          RobertaForSequenceClassification,
+                          RobertaTokenizer,
+                          XLMConfig, XLMForSequenceClassification,
+                          XLMTokenizer, XLNetConfig,
+                          XLNetForSequenceClassification,
+                          XLNetTokenizer,
+                          DistilBertConfig,
+                          DistilBertForSequenceClassification,
+                          DistilBertTokenizer,
+                          AlbertConfig,
+                          AlbertForSequenceClassification, 
+                          AlbertTokenizer,
                           )
 from transformers.data.processors.utils import InputExample
 from transformers import AdamW, get_linear_schedule_with_warmup
+from transformers import glue_convert_examples_to_features as convert_examples_to_features
 from sklearn.metrics import f1_score, average_precision_score
 
 logger = logging.getLogger(__name__)
@@ -230,11 +230,11 @@ def evaluate(args, model, tokenizer, label_list, prefix=""):
     args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
     eval_sampler = SequentialSampler(eval_dataset) # MUST BE SEQUENTIAL!
     eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler, batch_size=args.eval_batch_size)
-    
+
     # multi-gpu eval
     if args.n_gpu > 1:
-	model = torch.nn.DataParallel(model)
-        
+        model = torch.nn.DataParallel(model)
+
     # Eval!
     logger.info("***** Running evaluation {} *****".format(prefix))
     logger.info("  Num examples = %d", len(eval_dataset))
@@ -244,25 +244,25 @@ def evaluate(args, model, tokenizer, label_list, prefix=""):
     preds = None
     out_label_ids = None
     for batch in tqdm(eval_dataloader, desc="Evaluating"):
-	model.eval()
-	batch = tuple(t.to(args.device) for t in batch)
+        model.eval()
+        batch = tuple(t.to(args.device) for t in batch)
         
-	with torch.no_grad():
-	    inputs = {'input_ids':      batch[0],
-		      'attention_mask': batch[1],
-		      'labels':         batch[3]}
-	    if args.model_type != 'distilbert':
-		inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
-	    outputs = model(**inputs)
-	    tmp_eval_loss, logits = outputs[:2]
-	    eval_loss += tmp_eval_loss.mean().item()
-	nb_eval_steps += 1
-	if preds is None:
-	    preds = logits.detach().cpu().numpy()
-	    out_label_ids = inputs['labels'].detach().cpu().numpy()
-	else:
-	    preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-	    out_label_ids = np.append(out_label_ids,
+        with torch.no_grad():
+            inputs = {'input_ids':      batch[0],
+                      'attention_mask': batch[1],
+                      'labels':         batch[3]}
+            if args.model_type != 'distilbert':
+                inputs['token_type_ids'] = batch[2] if args.model_type in ['bert', 'xlnet'] else None  # XLM, DistilBERT and RoBERTa don't use segment_ids
+            outputs = model(**inputs)
+            tmp_eval_loss, logits = outputs[:2]
+            eval_loss += tmp_eval_loss.mean().item()
+        nb_eval_steps += 1
+        if preds is None:
+            preds = logits.detach().cpu().numpy()
+            out_label_ids = inputs['labels'].detach().cpu().numpy()
+        else:
+            preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+            out_label_ids = np.append(out_label_ids,
                                       inputs['labels'].detach().cpu().numpy(),
                                       axis=0)
     eval_loss = eval_loss / nb_eval_steps
@@ -285,7 +285,7 @@ def evaluate(args, model, tokenizer, label_list, prefix=""):
     k = 15
     ap_values = []
     for i,q in enumerate(q2data.keys()):
-        topk = sorted(q2data[q], key=lambda (c,p,yp,yt):p, reverse=True)[:k]
+        topk = sorted(q2data[q], key=lambda c,p,yp,yt:p, reverse=True)[:k]
         y_true = [yt for (c,p,yp,yt) in topk]
         y_score = [p for (c,p,yp,yt) in topk]
         ap = average_precision_score(y_true=y_true, y_score=y_score)
@@ -295,10 +295,10 @@ def evaluate(args, model, tokenizer, label_list, prefix=""):
     
     output_eval_file = os.path.join(args.output_dir, prefix, "eval_results.txt")
     with open(output_eval_file, "w") as writer:
-	logger.info("***** Eval results {} *****".format(prefix))
-	for key in sorted(result.keys()):
-	    logger.info("  %s = %s", key, str(result[key]))
-	    writer.write("%s = %s\n" % (key, str(result[key])))
+        logger.info("***** Eval results {} *****".format(prefix))
+        for key in sorted(result.keys()):
+            logger.info("  %s = %s", key, str(result[key]))
+            writer.write("%s = %s\n" % (key, str(result[key])))
             
     return results
 
@@ -372,7 +372,7 @@ def predict(args, model, tokenizer, label_list):
         ap_values = []
     with open(path_c, 'w') as fc, open(path_p, 'w') as fp:
         for i,q in enumerate(q2data.keys()):
-            topk = sorted(q2data[q], key=lambda (c,p,yp,yt):p, reverse=True)[:k]
+            topk = sorted(q2data[q], key=lambda c,p,yp,yt:p, reverse=True)[:k]
             topk_string = ', '.join(["('{}',{:.5f})".format(c,p) for (c,p,yp,yt) in topk])
             logger.info("{}. Top candidates for '{}': {}".format(i+1, q, topk_string))
             fc.write("{}\n".format("\t".join([c for (c,p,yp,yt) in topk])))
@@ -431,31 +431,31 @@ def map_queries_to_pred(examples, probs):
     return q2data
 
 
-def create_examples(path_queries, path_candidates, set_type, path_gold=None):
+def create_examples(args, path_queries, path_candidates, set_type, path_gold=None):
     if set_type not in ["train", "dev", "test"]:
-	raise ValueError("unrecognized set_type '{}'".format(set_type))
+        raise ValueError("unrecognized set_type '{}'".format(set_type))
     if path_gold is None and set_type != 'test':
-	raise ValueError("path_gold must be provided")
-	
+        raise ValueError("path_gold must be provided")
+
     # Load candidates
     with open(path_candidates) as f:
-	candidates = []
-	for line in f:
-	    candidate = line.strip()
-	    candidates.append(candidate)
+        candidates = []
+        for line in f:
+            candidate = line.strip()
+            candidates.append(candidate)
     nb_candidates = len(candidates)
-	
+
     # Load queries
     queries = []
     with open(path_queries) as fq:
         for line in fq:
-            query = line.split()
+            query = line.strip()
             queries.append(query)
 
     # Load gold hypernyms
-    pos = dict([] for q in set(queries))
+    pos = {q:[] for q in set(queries)}
     if path_gold:
-	with open(path_gold) as fg:
+        with open(path_gold) as fg:
             for i,line in enumerate(fg):
                 gold = line.strip()
                 query = queries[i]
@@ -485,41 +485,41 @@ def create_examples(path_queries, path_candidates, set_type, path_gold=None):
                 if i == buffer_size:
                     # Sample more indices
                     sampled_indices = np.random.randint(nb_candidates, size=buffer_size)
-                    i = 0	
+                    i = 0
                 if candidates[sampled_index] not in pos[q]:
-		    neg[q].append(candidates[sampled_index])
-		    nb_added += 1
-				
+                    neg[q].append(candidates[sampled_index])
+                    nb_added += 1
+
     # Create input examples
     examples = []
     for q in pos:
-	for (label, hlist) in [(1,pos[q]),(0,neg[q])]:
-	    for h in hlist:
-		guid = "%s-%s" % (set_type, len(examples)+1)
-		examples.append(InputExample(guid=guid, text_a=q, text_b=h, label=label))
+        for (label, hlist) in [(1,pos[q]),(0,neg[q])]:
+            for h in hlist:
+                guid = "%s-%s" % (set_type, len(examples)+1)
+                examples.append(InputExample(guid=guid, text_a=q, text_b=h, label=label))
     return examples
 
-def get_train_examples(data_dir):
-    path_queries = os.path.join(data_dir, "train.queries.txt")
-    path_gold = os.path.join(data_dir, "train.gold.txt")
-    path_candidates = os.path.join(data_dir, "candidates.txt")
-    logger.info("LOOKING AT {}".format(path))
-    return create_examples(path_queries, path_candidates, "train", path_gold=path_gold)
+def get_train_examples(args):
+    path_queries = os.path.join(args.data_dir, "train.queries.txt")
+    path_gold = os.path.join(args.data_dir, "train.gold.txt")
+    path_candidates = os.path.join(args.data_dir, "candidates.txt")
+    logger.info("LOOKING AT {}".format(args.data_dir))
+    return create_examples(args, path_queries, path_candidates, "train", path_gold=path_gold)
 
-def get_dev_examples(data_dir):
-    path_queries = os.path.join(data_dir, "dev.queries.txt")
-    path_gold = os.path.join(data_dir, "dev.gold.txt")
-    path_candidates = os.path.join(data_dir, "candidates.txt")
-    return create_examples(path_queries, path_candidates, "dev", path_gold=path_gold)
-	
-def get_test_examples(data_dir, gold_available=False):
-    path_queries = os.path.join(data_dir, "test.queries.txt")
+def get_dev_examples(args):
+    path_queries = os.path.join(args.data_dir, "dev.queries.txt")
+    path_gold = os.path.join(args.data_dir, "dev.gold.txt")
+    path_candidates = os.path.join(args.data_dir, "candidates.txt")
+    return create_examples(args, path_queries, path_candidates, "dev", path_gold=path_gold)
+
+def get_test_examples(args, gold_available=False):
+    path_queries = os.path.join(args.data_dir, "test.queries.txt")
     if gold_available:
-        path_gold = os.path.join(data_dir, "test.gold.txt")
+        path_gold = os.path.join(args.data_dir, "test.gold.txt")
     else:
         path_gold = None
-    path_candidates = os.path.join(data_dir, "candidates.txt")
-    return create_examples(path_queries, path_candidates, "test", path_gold=path_gold)
+    path_candidates = os.path.join(args.data_dir, "candidates.txt")
+    return create_examples(args, path_queries, path_candidates, "test", path_gold=path_gold)
 
 def load_and_cache_examples(args, set_type):
     """Load and cache examples. Only used for dev and test sets, on
@@ -535,12 +535,12 @@ def load_and_cache_examples(args, set_type):
         examples = pickle.load(cached_examples_file)
     else:
         if set_type=='dev':
-            examples = get_dev_examples(args.data_dir)
+            examples = get_dev_examples(args)
         elif set_type == 'test':
             # Check if gold labels are available
             path_gold = os.path.join(args.data_dir, "test.gold.txt")
             gold_available = os.path.exists(path_gold)
-            examples = get_test_examples(args.data_dir, gold_available=gold_available)
+            examples = get_test_examples(args, gold_available=gold_available)
         logger.info("Saving examples into cached file %s", cached_examples_file)
         with open(cached_examples_file, 'wb') as f:
             pickle.dump(examples, f)
@@ -565,9 +565,9 @@ def load_and_cache_features(args, tokenizer, label_list, set_type):
     else:
         logger.info("Creating features from %s set at %s", set_type, args.data_dir)
         if set_type=='train':
-            examples = get_train_examples(args.data_dir)
+            examples = get_train_examples(args)
         elif set_type=='dev':
-            examples = get_dev_examples(args.data_dir)
+            examples = get_dev_examples(args)
         features = convert_examples_to_features(examples,
                                                 tokenizer,
                                                 label_list=label_list,
@@ -581,7 +581,7 @@ def load_and_cache_features(args, tokenizer, label_list, set_type):
             logger.info("Saving features into cached file %s", cached_features_file)
             torch.save(features, cached_features_file)
 
-    if args.local_rank == 0 and set_type='train':
+    if args.local_rank == 0 and set_type=='train':
         torch.distributed.barrier()  # Make sure only the first process in distributed training process the dataset, and the others will use the cache
     
     return convert_features_to_tensor(features)
@@ -628,7 +628,7 @@ def main():
                         help="Set this flag if you are using an uncased model.")
 
     parser.add_argument("--per_query_nb_examples", default=50, type=int, 
-			help=("Nb training examples per training query. "
+                        help=("Nb training examples per training query. "
                               "Nb negative examples is obtained by subtracting the number of positive examples for a given query."))
     parser.add_argument("--per_gpu_train_batch_size", default=8, type=int,
                         help="Batch size per GPU/CPU for training.")
