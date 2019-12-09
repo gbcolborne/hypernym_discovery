@@ -477,7 +477,7 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
         i = 0
         for q in pos:
             neg[q] = []
-            nb_neg_examples = min(0, args.per_query_nb_examples-len(pos[q]))
+            nb_neg_examples = max(0, args.per_query_nb_examples-len(pos[q]))
             nb_added = 0
             while nb_added < nb_neg_examples:
                 sampled_index = sampled_indices[i]
