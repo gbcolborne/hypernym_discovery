@@ -195,15 +195,17 @@ def train(args, train_dataset, model, tokenizer, label_list):
                     print(json.dumps({**logs, **{'step': global_step}}))
 
                 if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
+                    checkpoint_prefix = 'checkpoint'
                     # Save model checkpoint
-                    output_dir = os.path.join(args.output_dir, 'checkpoint-{}'.format(global_step))
+                    output_dir = os.path.join(args.output_dir, '{}-{}'.format(checkpoint_prefix, global_step))
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
                     model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
                     model_to_save.save_pretrained(output_dir)
                     torch.save(args, os.path.join(output_dir, 'training_args.bin'))
                     logger.info("Saving model checkpoint to %s", output_dir)
-
+                    _rotate_checkpoints(args, checkpoint_prefix)
+                    
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
                 break
@@ -598,6 +600,34 @@ def convert_features_to_tensor(features):
     all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
     return TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_labels)
 
+def _rotate_checkpoints(args, checkpoint_prefix, use_mtime=False):
+    if not args.save_total_limit:
+        return
+    if args.save_total_limit <= 0:
+        return
+
+    # Check if we should delete older checkpoint(s)
+    glob_checkpoints = glob.glob(os.path.join(args.output_dir, '{}-*'.format(checkpoint_prefix)))
+    if len(glob_checkpoints) <= args.save_total_limit:
+        return
+
+    ordering_and_checkpoint_path = []
+    for path in glob_checkpoints:
+        if use_mtime:
+            ordering_and_checkpoint_path.append((os.path.getmtime(path), path))
+        else:
+            regex_match = re.match('.*{}-([0-9]+)'.format(checkpoint_prefix), path)
+            if regex_match and regex_match.groups():
+                ordering_and_checkpoint_path.append((int(regex_match.groups()[0]), path))
+
+    checkpoints_sorted = sorted(ordering_and_checkpoint_path)
+    checkpoints_sorted = [checkpoint[1] for checkpoint in checkpoints_sorted]
+    number_of_checkpoints_to_delete = max(0, len(checkpoints_sorted) - args.save_total_limit)
+    checkpoints_to_be_deleted = checkpoints_sorted[:number_of_checkpoints_to_delete]
+    for checkpoint in checkpoints_to_be_deleted:
+        logger.info("Deleting older checkpoint [{}] due to args.save_total_limit".format(checkpoint))
+        shutil.rmtree(checkpoint)
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -660,6 +690,8 @@ def main():
                         help="Log every X updates steps.")
     parser.add_argument('--save_steps', type=int, default=50,
                         help="Save checkpoint every X updates steps.")
+    parser.add_argument('--save_total_limit', type=int, default=None,
+                        help='Limit the total amount of checkpoints, delete the older checkpoints in the output_dir, does not delete by default')
     parser.add_argument("--eval_all_checkpoints", action='store_true',
                         help="Evaluate all checkpoints starting with the same prefix as model_name ending and ending with step number")
     parser.add_argument("--no_cuda", action='store_true',
