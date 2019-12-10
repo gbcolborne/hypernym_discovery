@@ -25,6 +25,7 @@ import logging
 import os
 import random
 import json
+import re
 import pickle
 from collections import OrderedDict
 
