@@ -506,12 +506,16 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
         
     # Create input examples
     examples = []
+    q_id = 0
     for q in pos:
+        q_id += 1
+        nb_examples_for_q = 0
         for (label, hlist) in [(1,pos[q]),(0,neg[q])]:
             for h in hlist:
                 guid = "%s-%s" % (set_type, len(examples)+1)
                 examples.append(InputExample(guid=guid, text_a=q, text_b=h, label=label))
-                logger.info("  Created example {}".format(guid))
+                nb_examples_for_q += 1
+        logger.info("  Created {} examples for query ' ' ({}/{})".format(nb_examples_for_q, q, q_id, len(pos))) 
     return examples
 
 def get_train_examples(args):
