@@ -476,7 +476,7 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
             if path_gold is None:
                 neg[q] = candidates[:]
             else:
-                neg[q] = filter(lambda x:x not in pos[q], candidates)
+                neg[q] = list(filter(lambda x:x not in pos[q], candidates))
                 logger.info("  Nb negative examples for query '{}': {}".format(q, len(neg[q])))
                 
     else:
@@ -511,6 +511,7 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
             for h in hlist:
                 guid = "%s-%s" % (set_type, len(examples)+1)
                 examples.append(InputExample(guid=guid, text_a=q, text_b=h, label=label))
+                logger.info("  Created example {}".format(guid))
     return examples
 
 def get_train_examples(args):
