@@ -835,7 +835,7 @@ def main():
         model.to(args.device)        
         _ = predict(args, model, tokenizer, label_list)
 
-    return results
+    return eval_results
 
 
 if __name__ == "__main__":
