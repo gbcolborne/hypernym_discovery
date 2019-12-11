@@ -477,7 +477,7 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
                 neg[q] = candidates[:]
             else:
                 neg[q] = filter(lambda x:x not in pos[q], candidates)
-                logger.info("  Nb negative examples for query '{}': {}".format(q, len(neg[q]))
+                logger.info("  Nb negative examples for query '{}': {}".format(q, len(neg[q])))
                 
     else:
         # Sample a bunch of indices at once to save time on generating random candidate indices
