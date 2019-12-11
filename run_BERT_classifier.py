@@ -26,6 +26,7 @@ import os
 import random
 import json
 import re
+import shutil
 import pickle
 from collections import OrderedDict
 
