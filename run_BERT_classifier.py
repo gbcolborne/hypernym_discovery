@@ -449,6 +449,7 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
             candidate = line.strip()
             candidates.append(candidate)
     nb_candidates = len(candidates)
+    logger.info("  Nb candidates: {}".format(nb_candidates))
 
     # Load queries
     queries = []
@@ -456,7 +457,8 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
         for line in fq:
             query = line.strip()
             queries.append(query)
-
+    logger.info("  Nb queries: {}".format(len(set(queries))))
+    
     # Load gold hypernyms
     pos = {q:[] for q in set(queries)}
     if path_gold:
@@ -465,19 +467,21 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
                 gold = line.strip()
                 query = queries[i]
                 pos[query].append(gold)
+        logger.info("  Nb positive examples: {}".format(sum(len(v) for k,v in pos.items())))
 
     # Identify or sample negative examples
     neg = {}
     if set_type == 'test':
-        all_candidate_indices = list(range(nb_candidates))
         for q in pos:
             if path_gold is None:
-                neg[q] = all_candidate_indices
+                neg[q] = candidates[:]
             else:
-                neg[q] = filter(lambda x:x not in pos[q], all_candidate_indices)
+                neg[q] = filter(lambda x:x not in pos[q], candidates)
+                logger.info("  Nb negative examples for query '{}': {}".format(q, len(neg[q]))
+                
     else:
         # Sample a bunch of indices at once to save time on generating random candidate indices
-        logger.info("Sampling negative examples with per_query_nb_examples={}".format(args.per_query_nb_examples))
+        logger.info("  Sampling negative examples with per_query_nb_examples={}".format(args.per_query_nb_examples))
         buffer_size = 1000000
         sampled_indices = np.random.randint(nb_candidates, size=buffer_size)
         i = 0
@@ -497,8 +501,8 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
                     nb_added += 1
         nb_pos = sum(len(v) for k,v in pos.items())
         nb_neg = sum(len(v) for k,v in neg.items())
-        logger.info("Nb positive examples: {}".format(nb_pos))
-        logger.info("Nb negative examples: {}".format(nb_neg))
+        logger.info("  Nb positive examples: {}".format(nb_pos))
+        logger.info("  Nb negative examples: {}".format(nb_neg))
         
     # Create input examples
     examples = []
@@ -828,11 +832,9 @@ def main():
 
     # Prediction on test set
     if args.do_pred and args.local_rank in [-1, 0]:
-        # Create output directory if needed
-        if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
-            os.makedirs(args.output_dir)
         _ = predict(args, model, tokenizer, label_list)
 
+        
     return eval_results
 
 
