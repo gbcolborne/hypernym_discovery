@@ -515,7 +515,7 @@ def create_examples(args, path_queries, path_candidates, set_type, path_gold=Non
                 guid = "%s-%s" % (set_type, len(examples)+1)
                 examples.append(InputExample(guid=guid, text_a=q, text_b=h, label=label))
                 nb_examples_for_q += 1
-        logger.info("  Created {} examples for query ' ' ({}/{})".format(nb_examples_for_q, q, q_id, len(pos))) 
+        logger.info("  Created {} examples for query '{}' ({}/{})".format(nb_examples_for_q, q, q_id, len(pos))) 
     return examples
 
 def get_train_examples(args):
