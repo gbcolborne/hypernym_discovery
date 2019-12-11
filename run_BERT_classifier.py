@@ -811,7 +811,7 @@ def main():
     # Evaluation on dev set
     eval_results = {}
     if args.do_eval and args.local_rank in [-1, 0]:
-        tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
+        tokenizer_to_eval = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
         checkpoints = [args.output_dir]
         if args.eval_all_checkpoints:
             checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
@@ -820,19 +820,17 @@ def main():
         for checkpoint in checkpoints:
             global_step = checkpoint.split('-')[-1] if len(checkpoints) > 1 else ""
             prefix = checkpoint.split('/')[-1] if checkpoint.find('checkpoint') != -1 else ""
-            
-            model = model_class.from_pretrained(checkpoint)
-            model.to(args.device)
-            result = evaluate(args, model, tokenizer, label_list, prefix=prefix)
+            model_to_eval = model_class.from_pretrained(checkpoint)
+            model_to_eval.to(args.device)
+            result = evaluate(args, model_to_eval, tokenizer_to_eval, label_list, prefix=prefix)
             result = dict((k + '_{}'.format(global_step), v) for k, v in result.items())
             eval_results.update(result)
 
     # Prediction on test set
     if args.do_pred and args.local_rank in [-1, 0]:
-        # Load a trained model and vocabulary that you have fine-tuned
-        model = model_class.from_pretrained(args.output_dir)
-        tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
-        model.to(args.device)        
+        # Create output directory if needed
+        if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
+            os.makedirs(args.output_dir)
         _ = predict(args, model, tokenizer, label_list)
 
     return eval_results
