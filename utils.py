@@ -208,3 +208,11 @@ def print_params(model):
         msg = "- {} (on {}, grad={}) ".format(name, device, grad)    
         print(msg)
 
+def write_queries_and_hypernyms(queries, hypernyms, path_queries, path_hypernyms, indices=None):
+    if indices is None:
+        indices = range(len(queries))
+    with open(path_queries, 'w') as fq, open(path_hypernyms, 'w') as fg:
+        for i in indices:
+            fq.write("{}\n".format(queries[i]))
+            fg.write("{}\n".format("\t".join(gold[i])))
+    return None
