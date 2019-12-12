@@ -209,6 +209,13 @@ def print_params(model):
         print(msg)
 
 def write_queries_and_hypernyms(queries, hypernyms, path_queries, path_hypernyms, indices=None):
+    """Given list of queries and corresponding list of lists of hypernyms,
+    write queries and hypernyms in SemEval format. If a list of
+    indices are provided, only the queries at those indices will be
+    written (along with their hypernyms).
+
+    """
+    
     if indices is None:
         indices = range(len(queries))
     with open(path_queries, 'w') as fq, open(path_hypernyms, 'w') as fg:
