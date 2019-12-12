@@ -221,5 +221,5 @@ def write_queries_and_hypernyms(queries, hypernyms, path_queries, path_hypernyms
     with open(path_queries, 'w') as fq, open(path_hypernyms, 'w') as fg:
         for i in indices:
             fq.write("{}\n".format(queries[i]))
-            fg.write("{}\n".format("\t".join(gold[i])))
+            fg.write("{}\n".format("\t".join(hypernyms[i])))
     return None
