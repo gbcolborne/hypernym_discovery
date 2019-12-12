@@ -78,6 +78,19 @@ MODEL_CLASSES = {
 }
 
 
+class HyperDiscoDataset:
+    """ A HyperDiscoDataset is a list of feature vectors. """
+
+    def __init__(self):
+        self.examples = []
+
+    def __getitem__(self, index):
+        return self.examples[index]
+
+    def add_example(self, example):
+        self.examples.append(example)
+
+        
 def set_seed(args):
     random.seed(args.seed)
     np.random.seed(args.seed)
