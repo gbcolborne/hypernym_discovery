@@ -34,7 +34,7 @@ if [[ $1 == "1A" ]]; then
     rm $filename
 elif [[ $1 == "1B" ]]; then
     filename=1B_it_itwac_tokenized.tar.gz
-    wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=$0Bz40_IukD5qDdktiRnh3MjhyYWc' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=0Bz40_IukD5qDdktiRnh3MjhyYWc" -O $filename && rm -rf /tmp/cookies.txt
+    wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=0Bz40_IukD5qDdktiRnh3MjhyYWc' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=0Bz40_IukD5qDdktiRnh3MjhyYWc" -O $filename && rm -rf /tmp/cookies.txt
     tar -xvzf $filename
     rm $filename
 elif [[ $1 == "1C" ]]; then
