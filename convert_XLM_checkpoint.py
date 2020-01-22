@@ -6,10 +6,9 @@ from transformers import XLMTokenizer, XLMConfig, XLMModel
 pre-trained model.
 
 Note: some properties are hard-coded assuming we are working on the
-SemEval-2018 hypernym discovery task, so the languages are EN, ES, and
-IT, for instance. Also, I assume that the tokenizer should not lower
-case and remove accents, as accents are important in 2 of these
-languages.
+SemEval-2018 hypernym discovery task. For instance, I assume that the
+tokenizer should not lower case and remove accents, as accents are
+important in 2 of these languages.
 
 """
 
