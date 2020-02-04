@@ -77,14 +77,9 @@ def xlm_convert_to_huggingface(args):
       use_lang_emb=params['use_lang_emb'],
       is_encoder=params['encoder_only'],
       output_hidden_states=True,
+      n_words = params['n_words'],
    )
-   # Hack: for some reason, the config init function won't set the
-   # n_words correctly no matter how I call it, so I set this
-   # attribute manually. Maybe this issue is known, as they created a
-   # setter for n_words which sets the vocab_size property (for
-   # backwards compatibility, they say).
-   xlm_config.n_words = vocab_size
-
+   
    # Provide both config and state dict to model init
    model = XLMModel.from_pretrained(
       None,
