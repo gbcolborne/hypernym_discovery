@@ -255,7 +255,7 @@ def encode_string_inputs(opt,
             all_langs.append(inputs['langs'])
         nb_processed += 1
         if nb_processed % 1000 == 0:
-            logger.info("Nb strings processed: {}".format(nb_processed))
+            logger.info("  Nb strings processed: {}".format(nb_processed))
     inputs = {}
     inputs["input_ids"] = all_tok_ids
     inputs["attention_mask"] = all_att_mask

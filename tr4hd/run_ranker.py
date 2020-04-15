@@ -349,7 +349,7 @@ def train(opt, model, tokenizer):
             query_inputs['langs'] = batch[3] if opt.encoder_type == 'xlm' else None # XLM needs lang IDs
         
             # Prepare batch of candidate inputs
-            cand_ids = batch[4].to(dtype=torch.long, device=opt.device)
+            cand_ids = batch[4]
             if opt.cache_cand_encs:
                 cand_inputs_sub = {'cand_encs': cand_encs[cand_ids]}
             else:

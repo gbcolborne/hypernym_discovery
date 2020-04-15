@@ -27,17 +27,37 @@ class BiEncoderScorer(torch.nn.Module):
         """ Encode candidates.
         Args:
         - inputs: dict containing input_ids, attention_mask, token_type_ids, langs
+
         """
-        outputs = self.encoder_c(inputs)
-        cand_encs = outputs[0] # The last hidden states are the first element of the tuple
-        return cand_encs
+        # Transformers take can not handle 3D inputs, so we will iterate over one axis of the tensor
+        input_ids = inputs["input_ids"]
+        (nb_queries, per_query_nb_examples, max_length) = input_ids.size()
+        print("Nb queries: {}".format(nb_queries))
+        print("Per query nb examples: {}".format(per_query_nb_examples))
+        print("Max length: {}".format(max_length))
+        
+        cand_encs = []
+        for i in range(nb_queries):
+            print(i)
+            inputs_sub = {}
+            for key in inputs:
+                if inputs[key] == None:
+                    inputs_sub[key] = None
+                else:
+                    inputs_sub[key] = inputs[key][i]
+            outputs = self.encoder_c(**inputs_sub)
+            encs = outputs[0] # The last hidden states are the first element of the tuple
+            cand_encs.append(encs)
+        return torch.cat(cand_encs)
 
     def encode_queries(self, inputs):
         """ Encode queries.
         Args:
         - inputs: dict containing input_ids, attention_mask, token_type_ids, langs
+
         """
-        outputs = self.encoder_q(inputs)
+
+        outputs = self.encoder_q(**inputs)
         query_encs = outputs[0] # The last hidden states are the first element of the tuple
         return query_encs
         
@@ -48,6 +68,7 @@ class BiEncoderScorer(torch.nn.Module):
         Args:
         - query_inputs: dict containing query inputs. The query inputs can be either query_encs (dims = [nb queries, hidden dim]) if the query encodings were pre-computed, or the following if the queries should be encoded on the fly: input_ids, attention_mask, token_type_ids, and langs (dims = [nb queries, max length]). 
         - cand_inputs: dict containing candate inputs, as for queries.
+
         """
 
         # Encode queries
@@ -61,7 +82,7 @@ class BiEncoderScorer(torch.nn.Module):
             cand_encs = cand_inputs['cand_encs']
         else:
             cand_encs = self.encode_candidates(cand_inputs)
-
+        
         # Compute dot product
         scores = torch.bmm(query_encs.unsqueeze(1), cand_encs.transpose(1, 2)).squeeze(1)
         return scores
@@ -71,7 +92,9 @@ class BiEncoderScorer(torch.nn.Module):
         Args:
         - logits: unnormalized class scores. Shape is (N,C) where C = number of classes, or (N, C, d_1, d_2, ..., d_K) with K >= 1 in the case of K-dimensional loss.
         - targets: targets. (N) where each value is 0 <= targets[i] <= C-1, or (N, d_1, d_2, ..., d_K) with K >= 1 in the case of K-dimensional loss.
+
         """
+
         return self.loss(logits, targets)
 
     def forward(self, query_inputs, cand_inputs):
