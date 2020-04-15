@@ -120,29 +120,40 @@ def sample_negative_examples(candidate_ids, pos_candidate_ids, per_query_nb_exam
     Args:
     - candidate_ids: list of candidate IDs
     - pos_candidate_ids: list of lists of positive candidate IDs (one for each query)
-    - per_query_nb_examples: sum of number of positive and negative examples per query
+    - per_query_nb_examples: sum of number of positive and negative examples per query. Note: if any queries have more than this number of positive examples, some will be discarded.
     
     """
+    
     logger.info("  Sampling negative examples with per_query_nb_examples={}".format(per_query_nb_examples))
     # Sample a bunch of indices at once to save time on generating random candidate indices
     buffer_size = 1000000
     sampled_indices = np.random.randint(len(candidate_ids), size=buffer_size)
+    nb_queries = len(pos_candidate_ids)
     neg_candidate_ids = []
-    i = 0
-    for pos in pos_candidate_ids:
-        pos = set(pos)
+    nb_pos_discarded = 0
+    buffer_index = 0
+    for i in range(nb_queries):
+        pos = pos_candidate_ids[i]
+        if len(pos) > per_query_nb_examples:
+            nb_pos_discarded += len(pos) - per_query_nb_examples
+            pos_candidate_ids[i] = pos[:per_query_nb_examples]
+            continue
+        pos_set = set(pos)
         nb_neg = max(0, per_query_nb_examples-len(pos))
         neg = []
         while len(neg) < nb_neg:
-            sampled_index = sampled_indices[i]
-            i += 1 
-            if i == buffer_size:
+            sampled_index = sampled_indices[buffer_index]
+            buffer_index += 1 
+            if buffer_index == buffer_size:
                 # Sample more indices
                 sampled_indices = np.random.randint(len(candidate_ids), size=buffer_size)
-                i = 0
-            if candidate_ids[sampled_index] not in pos:
+                buffer_index = 0
+            if candidate_ids[sampled_index] not in pos_set:
                 neg.append(candidate_ids[sampled_index])
         neg_candidate_ids.append(neg)
+    if nb_pos_discarded > 0:
+        msg = "  {} positive hypernyms removed because the query had more than {}".format(nb_pos_discarded, per_query_nb_examples)
+        logger.warning(msg)
     return neg_candidate_ids
 
 
