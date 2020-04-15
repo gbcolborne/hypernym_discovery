@@ -77,7 +77,8 @@ def make_train_set(opt, tokenizer, train_data):
                                 pad_on_left=False,
                                 pad_token=0,
                                 pad_token_segment_id=0,
-                                mask_padding_with_zero=True)
+                                mask_padding_with_zero=True,
+                                verbose=True)
 
 def make_dev_set(opt, tokenizer, dev_data):
     """ Make labeled dataset for validation data. Include all candidates for evaluation.
@@ -92,6 +93,7 @@ def make_dev_set(opt, tokenizer, dev_data):
     queries = dev_data["queries"]
     gold_cand_ids = dev_data["gold_hypernym_candidate_ids"]
     nb_candidates = len(dev_data["candidates"])
+    all_cand_ids = list(range(nb_candidates))
     cand_ids = []
     labels = []
     for i in range(len(queries)):
@@ -301,7 +303,8 @@ def make_q_and_c_dataset(opt,
                          pad_on_left=False,
                          pad_token=0,
                          pad_token_segment_id=0,
-                         mask_padding_with_zero=True):
+                         mask_padding_with_zero=True,
+                         verbose=False):
     """Create a dataset for query inputs and candidate ids, with optional labels.
 
     Args:
@@ -363,17 +366,18 @@ def make_q_and_c_dataset(opt,
         [[0] * len(candidates)] * len(queries)
 
     # Log a few examples
-    for i in range(5):
-        logger.info("*** Example ***")
-        logger.info("  i: %d" % (i))
-        logger.info("  query: %s" % queries[i])
-        logger.info("  query token IDs: {}".format(q_tok_ids[i]))
-        logger.info("  attention_mask: %s" % " ".join([str(x) for x in q_att_mask[i]]))
-        logger.info("  token type ids: %s" % " ".join([str(x) for x in q_tok_type_ids[i]]))
-        if opt.encoder_type == 'xlm':
-            logger.info("  langs: %s" % " ".join([str(x) for x in q_langs[i]]))
-        logger.info("  candidate ids: %s" % " ".join([str(x) for x in candidate_ids[i]]))
-        logger.info("  candidate labels: %s" % " ".join([str(x) for x in candidate_labels[i]]))
+    if verbose:
+        for i in range(5):
+            logger.info("*** Example ***")
+            logger.info("  i: %d" % (i))
+            logger.info("  query: %s" % queries[i])
+            logger.info("  query token IDs: {}".format(q_tok_ids[i]))
+            logger.info("  attention_mask: %s" % " ".join([str(x) for x in q_att_mask[i]]))
+            logger.info("  token type ids: %s" % " ".join([str(x) for x in q_tok_type_ids[i]]))
+            if opt.encoder_type == 'xlm':
+                logger.info("  langs: %s" % " ".join([str(x) for x in q_langs[i]]))
+            logger.info("  candidate ids: %s" % " ".join([str(x) for x in candidate_ids[i]]))
+            logger.info("  candidate labels: %s" % " ".join([str(x) for x in candidate_labels[i]]))
 
     q_tok_ids = torch.tensor(q_tok_ids, dtype=torch.long)
     q_att_mask = torch.tensor(q_att_mask, dtype=torch.long)
