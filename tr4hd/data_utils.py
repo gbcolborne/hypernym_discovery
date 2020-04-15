@@ -137,7 +137,6 @@ def sample_negative_examples(candidate_ids, pos_candidate_ids, per_query_nb_exam
         if len(pos) > per_query_nb_examples:
             nb_pos_discarded += len(pos) - per_query_nb_examples
             pos_candidate_ids[i] = pos[:per_query_nb_examples]
-            continue
         pos_set = set(pos)
         nb_neg = max(0, per_query_nb_examples-len(pos))
         neg = []
@@ -237,7 +236,7 @@ def encode_string_inputs(opt,
         all_langs = []
     for string in strings:
         toks = tokenizer.tokenize(string)
-        tok_ids = tokenizer.encode(toks, add_special_tokens=True, max_length=max_length, pad_to_max_length=False)
+        tok_ids = tokenizer.encode(toks, add_special_tokens=False, max_length=max_length, pad_to_max_length=False)
         inputs = encode_token_ids(opt,
                                   tok_ids, 
                                   tokenizer, 
@@ -322,11 +321,11 @@ def make_q_and_c_dataset(opt,
         if length not in nb_candidates_fd:
             nb_candidates_fd[length] = 0
         nb_candidates_fd[length] += 1
-    if len(c) > 1:
+    if len(nb_candidates_fd) > 1:
         msg = "Nb candidates must be same for all queries. "
         msg += "Found the following numbers: %s" % ", ".join(["{} (count={})".format(k,v) for (k,v) in nb_candidates_fd.items()])
         raise ValueError(msg)
-    
+
     nb_queries = len(queries)
     nb_pos_examples = 0
     nb_neg_examples = 0
@@ -367,7 +366,7 @@ def make_q_and_c_dataset(opt,
     for i in range(5):
         logger.info("*** Example ***")
         logger.info("  i: %d" % (i))
-        logger.info("  query: %s@" % queries[i])
+        logger.info("  query: %s" % queries[i])
         logger.info("  query token IDs: {}".format(q_tok_ids[i]))
         logger.info("  attention_mask: %s" % " ".join([str(x) for x in q_att_mask[i]]))
         logger.info("  token type ids: %s" % " ".join([str(x) for x in q_tok_type_ids[i]]))
@@ -432,9 +431,7 @@ def load_hd_data(opt, set_type):
                 else:
                     raise KeyError("Gold hypernym '{}' not in candidate2id".format(g))
             gold_hypernym_candidate_ids.append(g_id_list)
-        data["gold_hypernym_candidate_ids"] = gold_hypernym_candidate_ids
-
-        
+        data["gold_hypernym_candidate_ids"] = gold_hypernym_candidate_ids        
     return data
 
             
