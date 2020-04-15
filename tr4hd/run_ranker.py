@@ -264,11 +264,16 @@ def train(opt, model, tokenizer):
 
     # Make dataset for candidate inputs
     cand_inputs = make_candidate_set(opt, tokenizer, train_data)
+    cand_input_ids = cand_inputs.tensors[0]
+    cand_attention_mask = cand_inputs.tensors[1]
+    cand_token_type_ids = cand_inputs.tensors[2]
+    cand_langs = cand_inputs.tensors[3] if opt.encoder_type == 'xlm' else None
+    nb_candidates = len(cand_inputs)
     
     # Set batch size
     opt.train_batch_size = opt.per_gpu_train_batch_size * max(1, opt.n_gpu)
     sub_batch_size = opt.per_query_nb_examples
-    nb_sub_batches = len(cand_inputs) // sub_batch_size
+    nb_sub_batches = nb_candidates // sub_batch_size
 
     # Make data loader for training data which randomly samples queries
     train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
@@ -309,7 +314,7 @@ def train(opt, model, tokenizer):
     # Train!
     logger.info("***** Running training *****")
     logger.info("  Nb queries = %d", len(train_set))
-    logger.info("  Nb candidates = %d", len(cand_inputs))
+    logger.info("  Nb candidates = %d", nb_candidates)
     logger.info("  Batch size (nb queries) = %d", opt.train_batch_size)
     logger.info("  Sub-batch size (nb candidates per query) = %d", sub_batch_size)
     logger.info("  Nb sub-batches = %d", nb_sub_batches)
@@ -344,16 +349,15 @@ def train(opt, model, tokenizer):
             query_inputs['langs'] = batch[3] if opt.encoder_type == 'xlm' else None # XLM needs lang IDs
         
             # Prepare batch of candidate inputs
-            cand_ids = batch[4]
-                  
+            cand_ids = batch[4].to(dtype=torch.long, device=opt.device)
             if opt.cache_cand_encs:
                 cand_inputs_sub = {'cand_encs': cand_encs[cand_ids]}
             else:
                 cand_inputs_sub = {}
-                cand_inputs_sub['input_ids'] = cand_inputs[0][cand_ids]
-                cand_inputs_sub['attention_mask'] = cand_inputs[1][cand_ids]
-                cand_inputs_sub['token_type_ids'] = cand_inputs[2][cand_ids] if opt.encoder_type == 'bert' else None
-                cand_inputs_sub['langs'] = cand_inputs[3][cand_ids] if opt.encoder_type == 'xlm' else None
+                cand_inputs_sub['input_ids'] = cand_input_ids[cand_ids]
+                cand_inputs_sub['attention_mask'] = cand_attention_mask[cand_ids]
+                cand_inputs_sub['token_type_ids'] = cand_token_type_ids[cand_ids] if opt.encoder_type == 'bert' else None
+                cand_inputs_sub['langs'] = cand_langs[cand_ids] if opt.encoder_type == 'xlm' else None
 
             # Forward: get candidate scores
             model.train()
