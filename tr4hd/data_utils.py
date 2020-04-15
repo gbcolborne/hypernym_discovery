@@ -302,7 +302,20 @@ def make_q_and_c_dataset(opt,
     - candidate_labels: (optional) list of lists containing the labels of the candidate_ids (0 or 1)
 
     """
+
+    # Check args
     assert len(queries) == len(candidate_ids)
+    nb_candidates_fd = {}
+    for c in candidate_ids:
+        length = len(c)
+        if length not in nb_candidates_fd:
+            nb_candidates_fd[length] = 0
+        nb_candidates_fd[length] += 1
+    if len(c) > 1:
+        msg = "Nb candidates must be same for all queries. "
+        msg += "Found the following numbers: %s" % ", ".join(["{} (count={})".format(k,v) for (k,v) in nb_candidates_fd.items()])
+        raise ValueError(msg)
+    
     nb_queries = len(queries)
     nb_pos_examples = 0
     nb_neg_examples = 0
@@ -336,8 +349,7 @@ def make_q_and_c_dataset(opt,
     q_tok_type_ids = inputs["token_type_ids"]
     if opt.encoder_type == 'xlm':
         q_langs = inputs['langs']
-    cand_ids = candidate_ids
-    if cand_labels is None:
+    if candidate_labels is None:
         [[0] * len(candidates)] * len(queries)
 
     # Log a few examples
@@ -348,19 +360,21 @@ def make_q_and_c_dataset(opt,
         logger.info("  query token IDs: {}".format(q_tok_ids[i]))
         logger.info("  attention_mask: %s" % " ".join([str(x) for x in q_att_mask[i]]))
         logger.info("  token type ids: %s" % " ".join([str(x) for x in q_tok_type_ids[i]]))
-        logger.info("  candidate ids: %s" % " ".join([str(x) for x in cand_ids[i]]))
-        logger.info("  candidate labels: %s" % " ".join([str(x) for x in cand_labels[i]]))
+        if opt.encoder_type == 'xlm':
+            logger.info("  langs: %s" % " ".join([str(x) for x in q_langs[i]]))
+        logger.info("  candidate ids: %s" % " ".join([str(x) for x in candidate_ids[i]]))
+        logger.info("  candidate labels: %s" % " ".join([str(x) for x in candidate_labels[i]]))
 
     q_tok_ids = torch.tensor(q_tok_ids, dtype=torch.long)
     q_att_mask = torch.tensor(q_att_mask, dtype=torch.long)
     q_tok_type_ids = torch.tensor(q_tok_type_ids, dtype=torch.long)
-    cand_ids = torch.tensor(cand_ids, dtype=torch.long)
-    cand_labels = torch.tensor(cand_labels, dtype=torch.long)
+    candidate_ids = torch.tensor(candidate_ids, dtype=torch.long)
+    candidate_labels = torch.tensor(candidate_labels, dtype=torch.long)
     if opt.encoder_type == 'xlm':
         q_langs = torch.tensor(q_langs, dtype=torch.long)
-        return TensorDataset(q_tok_ids, q_att_mask, q_tok_type_ids, q_langs, cand_ids, cand_labels)
+        return TensorDataset(q_tok_ids, q_att_mask, q_tok_type_ids, q_langs, candidate_ids, candidate_labels)
     else:
-        return TensorDataset(q_tok_ids, q_att_mask, q_tok_type_ids, cand_ids, cand_labels)
+        return TensorDataset(q_tok_ids, q_att_mask, q_tok_type_ids, candidate_ids, candidate_labels)
 
 
 def load_hd_data(opt, set_type):
