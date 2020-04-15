@@ -236,6 +236,7 @@ def encode_string_inputs(opt,
     all_tok_type_ids = []
     if opt.encoder_type == 'xlm':
         all_langs = []
+    nb_processed = 0
     for string in strings:
         toks = tokenizer.tokenize(string)
         tok_ids = tokenizer.encode(toks, add_special_tokens=False, max_length=max_length, pad_to_max_length=False)
@@ -252,6 +253,9 @@ def encode_string_inputs(opt,
         all_tok_type_ids.append(inputs["token_type_ids"])
         if opt.encoder_type == 'xlm':
             all_langs.append(inputs['langs'])
+        nb_processed += 1
+        if nb_processed % 1000 == 0:
+            logger.info("Nb strings processed: {}".format(nb_processed))
     inputs = {}
     inputs["input_ids"] = all_tok_ids
     inputs["attention_mask"] = all_att_mask
