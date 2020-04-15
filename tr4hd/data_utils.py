@@ -291,7 +291,7 @@ def make_q_or_c_dataset(opt,
     attention_mask = torch.tensor(inputs["attention_mask"], dtype=torch.long)
     token_type_ids = torch.tensor(inputs["token_type_ids"], dtype=torch.long)
     if opt.encoder_type == 'xlm':
-        langs = torch.tensor(inputs['langs'], dtype=long)
+        langs = torch.tensor(inputs['langs'], dtype=torch.long)
         return TensorDataset(input_ids, attention_mask, token_type_ids, langs)
     else:
         return TensorDataset(input_ids, attention_mask, token_type_ids)
