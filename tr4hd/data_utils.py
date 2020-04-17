@@ -5,6 +5,10 @@ from torch.utils.data import TensorDataset
 
 logger = logging.getLogger(__name__)
 
+PAD_TOKEN=0
+SEGMENT_ID=0
+MASK_PADDING_WITH_ZERO=True
+
 def make_candidate_set(opt, tokenizer, candidate_data):
     """ Make unlabeled dataset for candidates.
     Args:
@@ -14,14 +18,7 @@ def make_candidate_set(opt, tokenizer, candidate_data):
 
     """
     candidates = candidate_data['candidates']
-    return make_q_or_c_dataset(opt,
-                               tokenizer, 
-                               candidates,
-                               max_length=128, 
-                               pad_on_left=False, 
-                               pad_token=0, 
-                               pad_token_segment_id=0, 
-                               mask_padding_with_zero=True)
+    return make_q_or_c_dataset(opt, tokenizer, candidates)
 
 def make_test_set(opt, tokenizer, test_data):
     """ Make unlabeled dataset for test set.
@@ -32,14 +29,7 @@ def make_test_set(opt, tokenizer, test_data):
 
     """
     queries = test_data["queries"]
-    return make_q_or_c_dataset(opt,
-                               tokenizer, 
-                               queries,
-                               max_length=128, 
-                               pad_on_left=False, 
-                               pad_token=0, 
-                               pad_token_segment_id=0, 
-                               mask_padding_with_zero=True)
+    return make_q_or_c_dataset(opt, tokenizer, queries)
 
 def make_train_set(opt, tokenizer, train_data):
     """ Make labeled dataset for training set. Subsample candidates using negative sampling.
@@ -68,17 +58,7 @@ def make_train_set(opt, tokenizer, train_data):
         labels.append(y)
 
     # Build dataset
-    return make_q_and_c_dataset(opt,
-                                tokenizer,
-                                queries,
-                                cand_ids,
-                                candidate_labels=labels,
-                                max_length=128,
-                                pad_on_left=False,
-                                pad_token=0,
-                                pad_token_segment_id=0,
-                                mask_padding_with_zero=True,
-                                verbose=True)
+    return make_q_and_c_dataset(opt, tokenizer, queries, cand_ids, candidate_labels=labels, verbose=True)
 
 def make_dev_set(opt, tokenizer, dev_data):
     """ Make labeled dataset for validation data. Include all candidates for evaluation.
@@ -104,17 +84,7 @@ def make_dev_set(opt, tokenizer, dev_data):
         labels.append(y)
 
     # Build dataset
-    return make_q_and_c_dataset(opt,
-                                tokenizer,
-                                queries,
-                                cand_ids,
-                                candidate_labels=labels,
-                                max_length=128,
-                                pad_on_left=False,
-                                pad_token=0,
-                                pad_token_segment_id=0,
-                                mask_padding_with_zero=True)
-
+    return make_q_and_c_dataset(opt, tokenizer, queries, cand_ids, candidate_labels=labels, verbose=False)
 
 def sample_negative_examples(candidate_ids, pos_candidate_ids, per_query_nb_examples):
     """ Sample negative examples.
@@ -170,145 +140,90 @@ def load_hypernyms(path):
             hypernyms.append(h_list)
     return hypernyms
 
-def encode_token_ids(opt,
-                     token_ids, 
-                     tokenizer, 
-                     max_length=128, 
-                     pad_on_left=False, 
-                     pad_token=0, 
-                     pad_token_segment_id=0, 
-                     mask_padding_with_zero=True):
-    """ Given a list of token_ids, encode the token_ids, adding special tokens and padding. 
+def get_missing_inputs(opt, token_ids, nb_tokens, lang_id):
+    """ Given a tensor of padded token ids and a tensor indicating the number of actual (non padding tokens) per example, return dict containing additional inputs needed to feed the transformer.
     
+    Args:
+    opt
+    tokenizer
+    token_ids: tensor shape (n, max_length)
+    nb_tokens: tensor shape (n, 1)
+    lang_id: integer ID of the language of the examples
+
     """
-    inputs = tokenizer.encode_plus(token_ids,
-                                   add_special_tokens=True,
-                                   max_length=max_length,
-                                   pad_to_max_length=False)
-    input_ids, tok_type_ids = inputs["input_ids"], inputs["token_type_ids"]
-    # The mask has 1 for real tokens and 0 for padding tokens. Only real
-    # tokens are attended to.
-    att_mask = [1] * len(input_ids)
-
-    # Encode language
-    if opt.encoder_type == 'xlm':
-        lang_id = tokenizer.lang2id[opt.lang]
-        langs = [lang_id] * len(input_ids)
-
-    # Zero-pad up to the sequence length.
-    padding_length = max_length - len(input_ids)
-    if pad_on_left:
-        input_ids = ([pad_token] * padding_length) + input_ids
-        att_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + att_mask
-        tok_type_ids = ([pad_token_segment_id] * padding_length) + tok_type_ids
-        if opt.encoder_type == 'xlm':
-            langs = ([pad_token] * padding_length) + langs
+    n_axes = len(token_ids.size())
+    if n_axes == 3:
+        x,y,z = token_ids.size()
+        token_ids = token_ids.view(x*y,z)
+        nb_tokens = nb_tokens.view(x*y,1)
+    nb_examples, max_length = token_ids.size()
+    inputs = {}
+    
+    # Segment IDs
+    if opt.encoder_type == 'bert':
+        inputs["token_type_ids"] = torch.tensor([[SEGMENT_ID] * max_length] * nb_examples, dtype=torch.long)
     else:
-        input_ids = input_ids + ([pad_token] * padding_length)
-        att_mask = att_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
-        tok_type_ids = tok_type_ids + ([pad_token_segment_id] * padding_length)
-        if opt.encoder_type == 'xlm':
-            langs = langs + ([pad_token] * padding_length)
-    assert len(input_ids) == max_length, "Error with input length {} vs {}".format(len(input_ids), max_length)
-    assert len(att_mask) == max_length, "Error with input length {} vs {}".format(len(att_mask), max_length)
-    assert len(tok_type_ids) == max_length, "Error with input length {} vs {}".format(len(tok_type_ids), max_length)
+        inputs["token_type_ids"] = None
+        
+    # Language IDs
     if opt.encoder_type == 'xlm':
-        assert len(langs) == max_length, "Error with input length {} vs {}".format(len(langs), max_length)
-    inputs = {"input_ids":input_ids, "token_type_ids":tok_type_ids, "attention_mask":att_mask}
-    if opt.encoder_type == 'xlm':
-        inputs['langs'] = langs
+        inputs["langs"] = torch.tensor([[lang_id] * max_length] * nb_examples, dtype=torch.long)
+    else:
+        inputs["langs"] = None
+        
+    # Attention mask
+    attention_mask = []
+    for i in range(nb_examples):
+        nb_tok = nb_tokens[i]
+        padding_length = opt.max_seq_length - nb_tok
+        mask = [1] * nb_tok + [0 if MASK_PADDING_WITH_ZERO else 1] * padding_length
+        attention_mask.append(mask)
+    inputs["attention_mask"] = torch.tensor(attention_mask, dtype=torch.long)
+
+    if n_axes == 3:
+        for k in inputs:
+            if inputs[k] is not None:
+                inputs[k] = inputs[k].view(x,y,z)
     return inputs
 
 
-def encode_string_inputs(opt,
-                         tokenizer, 
-                         strings,
-                         max_length=128,
-                         pad_on_left=False,
-                         pad_token=0,
-                         pad_token_segment_id=0,
-                         mask_padding_with_zero=True):
-    """ Tokenize strings and create dict containing: input_ids, attention_mask, token_type_ids, langs. 
+def encode_string_inputs(opt, tokenizer, strings):
+    """ Tokenize strings and return 2 tensors: input_ids (padded), nb_tokens (not including padding)
 
     """
-    all_tok_ids = []
-    all_att_mask = []
-    all_tok_type_ids = []
-    if opt.encoder_type == 'xlm':
-        all_langs = []
+    input_ids = []
+    nb_tokens = []
     nb_processed = 0
     for string in strings:
-        toks = tokenizer.tokenize(string)
-        tok_ids = tokenizer.encode(toks, add_special_tokens=False, max_length=max_length, pad_to_max_length=False)
-        inputs = encode_token_ids(opt,
-                                  tok_ids, 
-                                  tokenizer, 
-                                  max_length=max_length, 
-                                  pad_on_left=pad_on_left,
-                                  pad_token=pad_token, 
-                                  pad_token_segment_id=pad_token_segment_id, 
-                                  mask_padding_with_zero=mask_padding_with_zero)
-        all_tok_ids.append(inputs["input_ids"])
-        all_att_mask.append(inputs["attention_mask"])
-        all_tok_type_ids.append(inputs["token_type_ids"])
-        if opt.encoder_type == 'xlm':
-            all_langs.append(inputs['langs'])
+        tokens = tokenizer.tokenize(string)
+        token_ids = tokenizer.encode(tokens, add_special_tokens=True, max_length=opt.max_seq_length, pad_to_max_length=False)
+        nb_tokens.append([len(token_ids)])
+        # Pad
+        padding_length = opt.max_seq_length - len(token_ids)
+        token_ids += [PAD_TOKEN] * padding_length
+        input_ids.append(token_ids)
         nb_processed += 1
         if nb_processed % 1000 == 0:
             logger.info("  Nb strings processed: {}".format(nb_processed))
-    inputs = {}
-    inputs["input_ids"] = all_tok_ids
-    inputs["attention_mask"] = all_att_mask
-    inputs["token_type_ids"] = all_tok_type_ids
-    if opt.encoder_type == 'xlm':
-        inputs["langs"] = all_langs
-    return inputs
+    input_ids = torch.tensor(input_ids, dtype=torch.long)
+    nb_tokens = torch.tensor(nb_tokens, dtype=torch.long)    
+    return input_ids, nb_tokens
 
-def make_q_or_c_dataset(opt,
-                        tokenizer, 
-                        strings,
-                        max_length=128, 
-                        pad_on_left=False, 
-                        pad_token=0, 
-                        pad_token_segment_id=0, 
-                        mask_padding_with_zero=True):
+def make_q_or_c_dataset(opt, tokenizer, strings):
     """ Create an unlabeled dataset for inputs to an encoder (for queries or candidates). 
 
     """
     nb_strings = len(strings)
     logger.info("***** Making dataset ******")
     logger.info("  Nb strings (queries or candidates): {}".format(nb_strings))
-    logger.info("  Max length: {}".format(max_length))
-    inputs = encode_string_inputs(opt,
-                                  tokenizer, 
-                                  strings,
-                                  max_length=max_length, 
-                                  pad_on_left=pad_on_left, 
-                                  pad_token=pad_token, 
-                                  pad_token_segment_id=pad_token_segment_id, 
-                                  mask_padding_with_zero=mask_padding_with_zero)
-    input_ids = torch.tensor(inputs["input_ids"], dtype=torch.long)
-    attention_mask = torch.tensor(inputs["attention_mask"], dtype=torch.long)
-    token_type_ids = torch.tensor(inputs["token_type_ids"], dtype=torch.long)
-    if opt.encoder_type == 'xlm':
-        langs = torch.tensor(inputs['langs'], dtype=torch.long)
-        return TensorDataset(input_ids, attention_mask, token_type_ids, langs)
-    else:
-        return TensorDataset(input_ids, attention_mask, token_type_ids)
+    logger.info("  Max length: {}".format(opt.max_seq_length))
+    input_ids, nb_tokens = encode_string_inputs(opt, tokenizer, strings)
+    return TensorDataset(input_ids, nb_tokens)
 
 
 
-def make_q_and_c_dataset(opt,
-                         tokenizer,
-                         queries,
-                         candidate_ids,
-                         candidate_labels=None,
-                         max_length=128,
-                         pad_on_left=False,
-                         pad_token=0,
-                         pad_token_segment_id=0,
-                         mask_padding_with_zero=True,
-                         verbose=False):
+
+def make_q_and_c_dataset(opt, tokenizer, queries, candidate_ids, candidate_labels=None, verbose=False):
     """Create a dataset for query inputs and candidate ids, with optional labels.
 
     Args:
@@ -351,48 +266,21 @@ def make_q_and_c_dataset(opt,
     if candidate_labels:
         logger.info("  Nb positive examples: {}".format(nb_pos_examples))
         logger.info("  Nb negative examples: {}".format(nb_neg_examples))
-    logger.info("  Max length: {}".format(max_length))
-
-    inputs = encode_string_inputs(opt,
-                                  tokenizer, 
-                                  queries,
-                                  max_length=max_length,
-                                  pad_on_left=pad_on_left,
-                                  pad_token=pad_token,
-                                  pad_token_segment_id=pad_token_segment_id,
-                                  mask_padding_with_zero=mask_padding_with_zero)
-    q_tok_ids = inputs["input_ids"]
-    q_att_mask = inputs["attention_mask"]
-    q_tok_type_ids = inputs["token_type_ids"]
-    if opt.encoder_type == 'xlm':
-        q_langs = inputs['langs']
-    if candidate_labels is None:
-        [[0] * len(candidates)] * len(queries)
-
+    logger.info("  Max length: {}".format(opt.max_seq_length))
+    input_ids, nb_tokens = encode_string_inputs(opt, tokenizer, queries)
     # Log a few examples
     if verbose:
         for i in range(5):
             logger.info("*** Example ***")
             logger.info("  i: %d" % (i))
             logger.info("  query: %s" % queries[i])
-            logger.info("  query token IDs: {}".format(q_tok_ids[i]))
-            logger.info("  attention_mask: %s" % " ".join([str(x) for x in q_att_mask[i]]))
-            logger.info("  token type ids: %s" % " ".join([str(x) for x in q_tok_type_ids[i]]))
-            if opt.encoder_type == 'xlm':
-                logger.info("  langs: %s" % " ".join([str(x) for x in q_langs[i]]))
+            logger.info("  query token IDs: {}".format(input_ids[i]))
+            logger.info("  nb tokens (without padding): {}".format(nb_tokens[i]))
             logger.info("  candidate ids: %s" % " ".join([str(x) for x in candidate_ids[i]]))
             logger.info("  candidate labels: %s" % " ".join([str(x) for x in candidate_labels[i]]))
-
-    q_tok_ids = torch.tensor(q_tok_ids, dtype=torch.long)
-    q_att_mask = torch.tensor(q_att_mask, dtype=torch.long)
-    q_tok_type_ids = torch.tensor(q_tok_type_ids, dtype=torch.long)
     candidate_ids = torch.tensor(candidate_ids, dtype=torch.long)
     candidate_labels = torch.tensor(candidate_labels, dtype=torch.long)
-    if opt.encoder_type == 'xlm':
-        q_langs = torch.tensor(q_langs, dtype=torch.long)
-        return TensorDataset(q_tok_ids, q_att_mask, q_tok_type_ids, q_langs, candidate_ids, candidate_labels)
-    else:
-        return TensorDataset(q_tok_ids, q_att_mask, q_tok_type_ids, candidate_ids, candidate_labels)
+    return TensorDataset(input_ids, nb_tokens, candidate_ids, candidate_labels)
 
 
 def load_hd_data(opt, set_type):

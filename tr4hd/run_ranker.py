@@ -20,7 +20,7 @@ from transformers import BertConfig, BertModel, BertTokenizer
 from transformers import XLMConfig, XLMModel, XLMTokenizer
 from transformers import AdamW, get_linear_schedule_with_warmup
 from sklearn.metrics import average_precision_score
-from data_utils import make_train_set, make_dev_set, make_test_set, make_candidate_set, load_hd_data, rotate_checkpoints
+from data_utils import make_train_set, make_dev_set, make_test_set, make_candidate_set, load_hd_data, rotate_checkpoints, get_missing_inputs
 from BiEncoderScorer import BiEncoderScorer
 
 logger = logging.getLogger(__name__)
@@ -40,12 +40,13 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def encode_candidates(opt, model, candidate_inputs, grad=False, batch_size=128):
+def encode_candidates(opt, model, tokenizer, candidate_inputs, grad=False, batch_size=128):
     """ Encode candidates. Return Tensor of candidate encodings.
     Args:
     - opt
     - model
-v    - candidate_inputs: TensorDataset containing input_ids, attention_mask, token_type_ids, langs
+    - tokenizer
+    - candidate_inputs: TensorDataset containing input_ids, nb_tokens
     - grad: compute gradient
     - batch_size
 
@@ -57,10 +58,10 @@ v    - candidate_inputs: TensorDataset containing input_ids, attention_mask, tok
     cand_encs = []
     for batch in tqdm(dataloader, desc="Encoding"):
         batch = tuple(t.to(opt.device) for t in batch)
-        inputs = {'input_ids':      batch[0],
-                  'attention_mask': batch[1]}
-        inputs['token_type_ids'] = batch[2] if opt.encoder_type == 'bert' else None  # Bert needs segment IDs
-        inputs['langs'] = batch[3] if opt.encoder_type == 'xlm' else None # XLM needs lang IDs
+        input_ids = batch[0]
+        nb_tokens = batch[1]
+        inputs = {'input_ids':input_ids}
+        inputs.update(get_missing_inputs(opt, input_ids, nb_tokens, tokenizer.lang2id[opt.lang]))
         if grad:
             encs = model.encode_candidates(inputs)
         else:
@@ -71,13 +72,14 @@ v    - candidate_inputs: TensorDataset containing input_ids, attention_mask, tok
     return cand_encs
 
 
-def get_model_predictions(opt, model, query_inputs, cand_encs):
+def get_model_predictions(opt, model, tokenizer, query_inputs, cand_encs):
     """
     Get model predictions for queries (without grad). Return scores.
     Args:
     - opt
     - model
-    - query_inputs: TensorDataset containing: input_ids, attention_mask, token_type_ids, langs
+    - tokenizer
+    - query_inputs: TensorDataset containing: input_ids, nb_tokens
     - cand_encs: Tensor containing all candidate encodings.
 
     """
@@ -108,10 +110,10 @@ def get_model_predictions(opt, model, query_inputs, cand_encs):
         model.eval()
         batch = tuple(t.to(opt.device) for t in batch)
         # Encode queries
-        query_inputs = {'input_ids':        batch[0],
-                        'attention_mask':   batch[1]}
-        inputs['token_type_ids'] = batch[2] if opt.encoder_type == 'bert' else None  # Bert needs segment IDs
-        inputs['langs'] = batch[3] if opt.encoder_type == 'xlm' else None # XLM needs lang IDs
+        input_ids = batch[0]
+        nb_tokens = batch[1]
+        query_inputs = {'input_ids':input_ids}
+        query_inputs.update(get_missing_inputs(opt, input_ids, nb_tokens, tokenizer.lang2id[opt.lang]))
         with torch.no_grad():
             query_encs = model.encode_queries(query_inputs)
         query_inputs = {'query_encs':query_encs}
@@ -169,10 +171,10 @@ def predict(opt, model, tokenizer):
     cand_inputs = make_candidate_set(opt, tokenizer, test_data)
 
     # Encode candidates
-    cand_encs = encode_candidates(opt, model, cand_inputs, grad=False, batch_size=128)
+    cand_encs = encode_candidates(opt, model, tokenizer, cand_inputs, grad=False, batch_size=128)
 
     # Get top k candidates and scores
-    y_probs = get_model_predictions(opt, model, query_inputs, cand_encs)
+    y_probs = get_model_predictions(opt, model, tokenizer, query_inputs, cand_encs)
     top_candidates_and_scores = get_top_k_candidates_and_scores(y_probs)
         
     # Write top k candidates and scores
@@ -196,8 +198,8 @@ def evaluate(opt, model, eval_data, cand_inputs):
     Args:
     - opt
     - model
-    - eval_data: TensorDataset containing: input_ids, attention_mask, token_type_ids, langs, candidate_ids, labels.
-    - cand_inputs TensorDataset containing: input_ids, attention_mask, token_type_ids, langs.
+    - eval_data: TensorDataset containing: input_ids, nb_tokens, candidate_ids, labels.
+    - cand_inputs TensorDataset containing: input_ids, nb_tokens.
 
     """
 
@@ -208,10 +210,10 @@ def evaluate(opt, model, eval_data, cand_inputs):
     logger.info("  Nb candidates: {}".format(nb_candidates))
 
     # Encode candidates    
-    cand_encs = encode_candidates(opt, model, cand_inputs, grad=False, batch_size=128)
+    cand_encs = encode_candidates(opt, model, tokenizer, cand_inputs, grad=False, batch_size=128)
 
     # Get model predictions
-    y_probs = get_model_predictions(opt, model, eval_data, cand_encs)
+    y_probs = get_model_predictions(opt, model, tokenizer, eval_data, cand_encs)
     y_probs = torch.tensor(y_probs, dtype=torch.float32)
 
     # Get labels
@@ -265,9 +267,7 @@ def train(opt, model, tokenizer):
     # Make dataset for candidate inputs
     cand_inputs = make_candidate_set(opt, tokenizer, train_data)
     cand_input_ids = cand_inputs.tensors[0]
-    cand_attention_mask = cand_inputs.tensors[1]
-    cand_token_type_ids = cand_inputs.tensors[2]
-    cand_langs = cand_inputs.tensors[3] if opt.encoder_type == 'xlm' else None
+    cand_nb_tokens = cand_inputs.tensors[1]
     nb_candidates = len(cand_inputs)
     
     # Set batch size
@@ -332,39 +332,38 @@ def train(opt, model, tokenizer):
     for _ in train_iterator:
         # At start of each epoch, encode all candidates
         if opt.cache_cand_encs:
-            cand_encs = encode_candidates(opt, model, cand_inputs, grad=(not opt.freeze_candidate_encoder), batch_size=128)
+            cand_encs = encode_candidates(opt, model, tokenizer, cand_inputs, grad=(not opt.freeze_candidate_encoder), batch_size=128)
 
         # Uncomment to reload train set, so that we get new negative samples
         # train_set = make_train_set(opt, tokenizer, train_data)
+        # train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
+        # train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
  
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=opt.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
             batch = tuple(t.to(opt.device) for t in batch)
+            query_input_ids = batch[0]
+            query_nb_tokens = batch[1]
+            cand_ids = batch[2]
+            labels = batch[3]    
 
             # Prepare batch of query inputs
-            query_inputs = {} 
-            query_inputs['input_ids'] = batch[0]
-            query_inputs['attention_mask'] = batch[1]
-            query_inputs['token_type_ids'] = batch[2] if opt.encoder_type == 'bert' else None  # Bert needs segment IDs
-            query_inputs['langs'] = batch[3] if opt.encoder_type == 'xlm' else None # XLM needs lang IDs
+            query_inputs = {'input_ids': query_input_ids}
+            query_inputs.update(get_missing_inputs(opt, query_input_ids, query_nb_tokens, tokenizer.lang2id[opt.lang]))
         
             # Prepare batch of candidate inputs
-            cand_ids = batch[4]
             if opt.cache_cand_encs:
                 cand_inputs_sub = {'cand_encs': cand_encs[cand_ids]}
             else:
                 cand_inputs_sub = {}
                 cand_inputs_sub['input_ids'] = cand_input_ids[cand_ids]
-                cand_inputs_sub['attention_mask'] = cand_attention_mask[cand_ids]
-                cand_inputs_sub['token_type_ids'] = cand_token_type_ids[cand_ids] if opt.encoder_type == 'bert' else None
-                cand_inputs_sub['langs'] = cand_langs[cand_ids] if opt.encoder_type == 'xlm' else None
+                cand_inputs_sub.update(get_missing_inputs(opt, cand_input_ids[cand_ids], cand_nb_tokens[cand_ids], tokenizer.lang2id[opt.lang]))
 
             # Forward: get candidate scores
             model.train()
             scores = model(query_inputs, cand_inputs_sub)
 
             # Compute loss
-            labels = batch[5]    
             loss = model.compute_loss(scores, labels)
             if opt.n_gpu > 1:
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
