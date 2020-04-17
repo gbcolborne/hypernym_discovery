@@ -151,11 +151,7 @@ def get_missing_inputs(opt, token_ids, nb_tokens, lang_id):
     lang_id: integer ID of the language of the examples
 
     """
-    n_axes = len(token_ids.size())
-    if n_axes == 3:
-        x,y,z = token_ids.size()
-        token_ids = token_ids.view(x*y,z)
-        nb_tokens = nb_tokens.view(x*y,1)
+
     nb_examples, max_length = token_ids.size()
     inputs = {}
     
@@ -180,10 +176,6 @@ def get_missing_inputs(opt, token_ids, nb_tokens, lang_id):
         attention_mask.append(mask)
     inputs["attention_mask"] = torch.tensor(attention_mask, dtype=torch.long)
 
-    if n_axes == 3:
-        for k in inputs:
-            if inputs[k] is not None:
-                inputs[k] = inputs[k].view(x,y,z)
     return inputs
 
 
