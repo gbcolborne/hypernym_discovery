@@ -184,11 +184,11 @@ def encode_token_ids(opt,
     inputs = tokenizer.encode_plus(token_ids,
                                    add_special_tokens=True,
                                    max_length=max_length,
-                                   pad_to_max_length=True)
+                                   pad_to_max_length=False)
     input_ids, tok_type_ids = inputs["input_ids"], inputs["token_type_ids"]
     # The mask has 1 for real tokens and 0 for padding tokens. Only real
     # tokens are attended to.
-    att_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+    att_mask = [1] * len(input_ids)
 
     # Encode language
     if opt.encoder_type == 'xlm':
