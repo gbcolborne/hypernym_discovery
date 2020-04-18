@@ -8,6 +8,7 @@ from __future__ import absolute_import, division, print_function
 import os, argparse, logging, json, random
 import numpy as np
 import torch
+import torch.nn.functional as nnfunc
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 try:
@@ -40,6 +41,28 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
+def encode_batch(opt, model, tokenizer, batch, grad=False, these_are_candidates=False):
+    """ Encode batch of queries or candidates. 
+    Args:
+    - opt
+    - model
+    - tokenizer
+    - batch: tuple of input tensors (input_ids and nb_tokens)
+
+    """
+
+    batch = tuple(t.to(opt.device) for t in batch)
+    input_ids = batch[0]
+    nb_tokens = batch[1]
+    inputs = {'input_ids':input_ids}
+    inputs.update(get_missing_inputs(opt, input_ids, nb_tokens, tokenizer.lang2id[opt.lang]))
+    if grad:
+        encs = model.encode_candidates(inputs) if these_are_candidates else model.encode_queries(inputs)
+    else:
+        with torch.no_grad():
+            encs = model.encode_candidates(inputs) if these_are_candidates else model.encode_queries(inputs)
+    return encs
+    
 def encode_candidates(opt, model, tokenizer, candidate_inputs, grad=False, batch_size=128):
     """ Encode candidates. Return Tensor of candidate encodings.
     Args:
@@ -57,16 +80,7 @@ def encode_candidates(opt, model, tokenizer, candidate_inputs, grad=False, batch
     logger.info("  Batch size = %d", batch_size)
     cand_encs = []
     for batch in tqdm(dataloader, desc="Encoding"):
-        batch = tuple(t.to(opt.device) for t in batch)
-        input_ids = batch[0]
-        nb_tokens = batch[1]
-        inputs = {'input_ids':input_ids}
-        inputs.update(get_missing_inputs(opt, input_ids, nb_tokens, tokenizer.lang2id[opt.lang]))
-        if grad:
-            encs = model.encode_candidates(inputs)
-        else:
-            with torch.no_grad():
-                encs = model.encode_candidates(inputs)
+        encs = encode_batch(opt, model, tokenizer, batch, grad=grad, these_are_candidates=True)
         cand_encs.append(encs)
     cand_encs = torch.cat(cand_encs)
     return cand_encs
@@ -90,8 +104,6 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_encs):
 
     # Set batch size
     opt.eval_batch_size = opt.per_gpu_eval_batch_size * max(1, opt.n_gpu)
-    sub_batch_size = opt.per_query_nb_examples 
-    nb_sub_batches = len(cand_encs) // sub_batch_size
 
     # Make loader for queries
     sampler = SequentialSampler(query_inputs) 
@@ -100,31 +112,16 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_encs):
     # Start eval
     logger.info("  Nb queries = %d", len(query_inputs))
     logger.info("  Nb candidates = %d", len(cand_encs))
-    logger.info("  Batch size (nb queries) = %d", opt.eval_batch_size)
-    logger.info("  Sub-batch size (nb candidates per query) = %d", sub_batch_size)
-    logger.info("  Nb sub-batches = %d", nb_sub_batches)
-    nb_eval_steps = 0
+    logger.info("  Nb batches = %d", opt.eval_batch_size)
     all_y_probs = []
+    model.eval()
     for batch in tqdm(dataloader, desc="Predicting"):
         y_probs = None
-        model.eval()
-        batch = tuple(t.to(opt.device) for t in batch)
         # Encode queries
-        input_ids = batch[0]
-        nb_tokens = batch[1]
-        query_inputs = {'input_ids':input_ids}
-        query_inputs.update(get_missing_inputs(opt, input_ids, nb_tokens, tokenizer.lang2id[opt.lang]))
-        with torch.no_grad():
-            query_encs = model.encode_queries(query_inputs)
-        query_inputs = {'query_encs':query_encs}
-        for i in range(nb_sub_batches):
-            # Get sub-batch of candidate encodings
-            start = i * sub_batch_size
-            end = (i + 1) * sub_batch_size
-            cand_inputs = {'cand_encs':cand_encs[start:end]}
+        query_encs = encode_batch(opt, model, tokenizer, batch, grad=False, these_are_candidates=False)
+        for cand_id in range(len(cand_encs)):
             with torch.no_grad():
-                scores = model(query_inputs, cand_inputs)
-            nb_eval_steps += 1
+                scores = model({'query_encs': query_encs}, {'cand_encs':cand_encs[cand_id]})
             if y_probs is None:
                 y_probs = scores.detach().cpu().numpy()
             else:
@@ -191,7 +188,8 @@ def predict(opt, model, tokenizer):
             logger.info("{}. Top candidates for '{}': {}".format(i+1, query, topk_string))
     return
 
-
+def compute_loss(inputs, targets):
+    return nnfunc.binary_cross_entropy(inputs, targets)
 
 def evaluate(opt, model, eval_data, cand_inputs):
     """ Evaluate model on labeled dataset (without grad). Return dictionary containing average loss and evaluation metrics.
@@ -209,7 +207,8 @@ def evaluate(opt, model, eval_data, cand_inputs):
     logger.info("  Nb queries: {}".format(nb_queries))
     logger.info("  Nb candidates: {}".format(nb_candidates))
 
-    # Encode candidates    
+    # Encode candidates
+    model.eval()
     cand_encs = encode_candidates(opt, model, tokenizer, cand_inputs, grad=False, batch_size=128)
 
     # Get model predictions
@@ -220,7 +219,7 @@ def evaluate(opt, model, eval_data, cand_inputs):
     y_true = eval_data.tensors[5]
     
     # Compute loss
-    loss = model.compute_loss(y_probs, y_true)
+    loss = compute_loss(y_probs, y_true)
     total_loss = loss.item()
     avg_loss = total_loss / (nb_queries * nb_candidates)
     results = {'avg_loss': avg_loss}
@@ -272,8 +271,6 @@ def train(opt, model, tokenizer):
     
     # Set batch size
     opt.train_batch_size = opt.per_gpu_train_batch_size * max(1, opt.n_gpu)
-    sub_batch_size = opt.per_query_nb_examples
-    nb_sub_batches = nb_candidates // sub_batch_size
 
     # Make data loader for training data which randomly samples queries
     train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
@@ -281,11 +278,13 @@ def train(opt, model, tokenizer):
 
     # Set number of epochs and steps 
     if opt.max_steps > 0:
-        t_total = opt.max_steps 
+        total_steps = opt.max_steps # One step per batch of queries
+        total_sub_steps = total_steps * opt.per_query_nb_examples // opt.gradient_accumulation_steps # One substep per candidate per batch of queries
         opt.num_train_epochs = opt.max_steps // (len(train_dataloader) // opt.gradient_accumulation_steps) + 1
     else:
-        t_total = opt.num_train_epochs * len(train_dataloader) // opt.gradient_accumulation_steps
-
+        total_steps = opt.num_train_epochs * len(train_dataloader) 
+        total_sub_steps = total_steps * opt.per_query_nb_examples // opt.gradient_accumulation_steps
+        
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
@@ -293,7 +292,8 @@ def train(opt, model, tokenizer):
         {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=opt.learning_rate, eps=opt.adam_epsilon)
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=opt.warmup_steps, num_training_steps=t_total)
+    # Scheduler will only step once per batch of queries
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=opt.warmup_steps, num_training_steps=total_steps)
     if opt.fp16:
         try:
             from apex import amp
@@ -316,23 +316,21 @@ def train(opt, model, tokenizer):
     logger.info("  Nb queries = %d", len(train_set))
     logger.info("  Nb candidates = %d", nb_candidates)
     logger.info("  Batch size (nb queries) = %d", opt.train_batch_size)
-    logger.info("  Sub-batch size (nb candidates per query) = %d", sub_batch_size)
-    logger.info("  Nb sub-batches = %d", nb_sub_batches)
+    logger.info("  Nb candidates evaluated per query = %d", opt.per_query_nb_examples)
     logger.info("  Nb Epochs = %d", opt.num_train_epochs)
     logger.info("  Instantaneous batch size per GPU = %d", opt.per_gpu_train_batch_size)
     logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d queries",
                    opt.train_batch_size * opt.gradient_accumulation_steps * (torch.distributed.get_world_size() if opt.local_rank != -1 else 1))
     logger.info("  Gradient Accumulation steps = %d", opt.gradient_accumulation_steps)
-    logger.info("  Total optimization steps = %d", t_total * sub_batch_size)
+    logger.info("  Total optimization steps (one per batch of queries) = %d", total_steps)
+    logger.info("  Total optimization steps (one per candidate per batch of queries) = %d", total_sub_steps)    
     global_step = 0
+    global_sub_step = 0
     tr_loss, logging_loss = 0.0, 0.0
     train_iterator = trange(int(opt.num_train_epochs), desc="Epoch", disable=opt.local_rank not in [-1, 0])
     set_seed(opt.seed)  
     model.zero_grad()
     for _ in train_iterator:
-        # At start of each epoch, encode all candidates
-        if opt.cache_cand_encs:
-            cand_encs = encode_candidates(opt, model, tokenizer, cand_inputs, grad=(not opt.freeze_candidate_encoder), batch_size=128)
 
         # Uncomment to reload train set, so that we get new negative samples
         # train_set = make_train_set(opt, tokenizer, train_data)
@@ -341,43 +339,53 @@ def train(opt, model, tokenizer):
  
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=opt.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
-            batch = tuple(t.to(opt.device) for t in batch)
+            # Unpack batch
             query_input_ids = batch[0]
             query_nb_tokens = batch[1]
             cand_ids = batch[2]
             labels = batch[3]    
 
-            # Prepare batch of query inputs
-            query_inputs = {'input_ids': query_input_ids}
-            query_inputs.update(get_missing_inputs(opt, query_input_ids, query_nb_tokens, tokenizer.lang2id[opt.lang]))
-        
-            # Prepare batch of candidate inputs
-            if opt.cache_cand_encs:
-                cand_inputs_sub = {'cand_encs': cand_encs[cand_ids]}
-            else:
-                cand_inputs_sub = {}
-                cand_inputs_sub['input_ids'] = cand_input_ids[cand_ids]
-                cand_inputs_sub.update(get_missing_inputs(opt, cand_input_ids[cand_ids], cand_nb_tokens[cand_ids], tokenizer.lang2id[opt.lang]))
-
-            # Forward: get candidate scores
+            # Encode queries
             model.train()
-            scores = model(query_inputs, cand_inputs_sub)
+            query_batch = (query_input_ids, query_nb_tokens)
+            query_encs = encode_batch(opt, model, tokenizer, query_batch, grad=True, these_are_candidates=False)
+            
+            # Iterate over candidate indices, accumulate gradients
+            for sub_step, cand_ix in enumerate(range(opt.per_query_nb_examples)):
+                # Encode the <batch_size> candidates at this candidate index
+                cand_ids_sub = cand_ids[:,cand_ix]
+                cand_input_ids_sub = cand_input_ids[cand_ids_sub]
+                cand_nb_tokens_sub = cand_nb_tokens[cand_ids_sub]
+                cand_batch = (cand_input_ids_sub, cand_nb_tokens_sub)
+                cand_encs = encode_batch(opt, model, tokenizer, cand_batch, grad=True, these_are_candidates=True)
 
-            # Compute loss
-            loss = model.compute_loss(scores, labels)
-            if opt.n_gpu > 1:
-                loss = loss.mean() # mean() to average on multi-gpu parallel training
-            if opt.gradient_accumulation_steps > 1:
-                loss = loss / opt.gradient_accumulation_steps
+                # Forward pass on <batch_size> pairs of (query, candidate) encodings
+                scores = model({'query_encs': query_encs}, {'cand_encs':cand_encs})
 
-            # Backward
-            if opt.fp16:
-                with amp.scale_loss(loss, optimizer) as scaled_loss:
-                    scaled_loss.backward()
-            else:
-                loss.backward()
-            tr_loss += loss
+                # Compute loss
+                labels_sub = labels[:,cand_ix]
+                sub_loss = compute_loss(scores, labels_sub)
 
+                print(sub_loss)
+                sub_loss = sub_loss / opt.per_query_nb_examples
+
+                if opt.n_gpu > 1:
+                    sub_loss = sub_loss.mean() # mean() to average on multi-gpu parallel training
+                if opt.gradient_accumulation_steps > 1:
+                    sub_loss = sub_loss / opt.gradient_accumulation_steps
+
+                # Backprop
+                if opt.fp16:
+                    with amp.scale_loss(sub_loss, optimizer) as scaled_loss:
+                        scaled_loss.backward(retain_graph=True)
+                else:
+                    sub_loss.backward(retain_graph=True)
+                # We retained the graph to not free the sub-graph for the forward pass of the query encoder, which we want to re-use. Free the candidate encodings sub-graph.
+                cand_encs = cand_encs.detach()
+                
+                tr_loss += sub_loss                
+                global_sub_step += 1
+                
             # Check if we update or accumulate gradient
             if (step + 1) % opt.gradient_accumulation_steps == 0:
                 # Clip grad
@@ -386,43 +394,44 @@ def train(opt, model, tokenizer):
                 else:
                     torch.nn.utils.clip_grad_norm_(model.parameters(), opt.max_grad_norm)
 
-                # Update model and learning rate schedule
+                # Update model 
                 optimizer.step()
-                scheduler.step()  
                 model.zero_grad()
+                scheduler.step()  
                 global_step += 1
 
-                if opt.local_rank in [-1, 0] and opt.logging_steps > 0 and global_step % opt.logging_steps == 0:
-                    logs = {}
+            # Check if we log loss and validation metrics
+            if opt.local_rank in [-1, 0] and opt.logging_steps > 0 and global_step % opt.logging_steps == 0:
+                logs = {}
 
-                    # Evaluate on dev set
-                    if opt.local_rank == -1 and opt.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
-                        results = evaluate(opt, model, dev_set, cand_inputs)
-                        for key, value in results.items():
-                            eval_key = 'eval_{}'.format(key)
-                            logs[eval_key] = value
+                # Check if we validate on dev set
+                if opt.local_rank == -1 and opt.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
+                    results = evaluate(opt, model, dev_set, cand_inputs)
+                    for key, value in results.items():
+                        eval_key = 'eval_{}'.format(key)
+                        logs[eval_key] = value
 
-                    # Log loss on training set and learning rate
-                    loss_scalar = (tr_loss - logging_loss) / opt.logging_steps
-                    logging_loss = tr_loss
-                    learning_rate_scalar = scheduler.get_lr()[0]
-                    logs['learning_rate'] = learning_rate_scalar
-                    logs['loss'] = loss_scalar
-                    for key, value in logs.items():
-                        tb_writer.add_scalar(key, value, global_step)
+                # Log loss on training set and learning rate
+                loss_scalar = (tr_loss - logging_loss) / opt.logging_steps
+                logging_loss = tr_loss
+                learning_rate_scalar = scheduler.get_lr()[0]
+                logs['learning_rate'] = learning_rate_scalar
+                logs['loss'] = loss_scalar
+                for key, value in logs.items():
+                    tb_writer.add_scalar(key, value, global_step)
                     # logger.info("  " + json.dumps({**logs, **{'step': global_step}}))
-
-                if opt.local_rank in [-1, 0] and opt.save_steps > 0 and global_step % opt.save_steps == 0:
-                    # Save model checkpoint
-                    checkpoint_prefix = 'checkpoint'
-                    output_dir = os.path.join(opt.model_dir, '{}-{}'.format(checkpoint_prefix, global_step))
-                    if not os.path.exists(output_dir) and opt.local_rank in [-1,0]:
-                        os.makedirs(output_dir)
-                    model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
-                    torch.save(model_to_save.state_dict(), os.path.join(output_dir, 'state_dict.pkl'))
-                    torch.save(opt, os.path.join(output_dir, 'training_args.bin'))
-                    logger.info("Saving model checkpoint to %s", output_dir)
-                    rotate_checkpoints(opt.save_total_limit, opt.model_dir, checkpoint_prefix)
+                    
+            # Check if we save model checkpoint
+            if opt.local_rank in [-1, 0] and opt.save_steps > 0 and global_step % opt.save_steps == 0:
+                checkpoint_prefix = 'checkpoint'
+                output_dir = os.path.join(opt.model_dir, '{}-{}'.format(checkpoint_prefix, global_step))
+                if not os.path.exists(output_dir) and opt.local_rank in [-1,0]:
+                    os.makedirs(output_dir)
+            model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
+            torch.save(model_to_save.state_dict(), os.path.join(output_dir, 'state_dict.pkl'))
+            torch.save(opt, os.path.join(output_dir, 'training_args.bin'))
+            logger.info("Saving model checkpoint to %s", output_dir)
+            rotate_checkpoints(opt.save_total_limit, opt.model_dir, checkpoint_prefix)
                     
             if opt.max_steps > 0 and global_step > opt.max_steps:
                 epoch_iterator.close()
@@ -484,9 +493,6 @@ def main():
 
     parser.add_argument("--freeze_cand_encoder", action='store_true',
                         help="Freeze weights of candidate encoder.")
-    parser.add_argument("--cache_cand_encs", action='store_true',
-                        help=("Set this flag to cache candidate encodings at the start of each epoch "
-                              "(only appicable if do_train is True)"))
     parser.add_argument("--per_query_nb_examples", default=50, type=int, 
                         help=("Nb candidates evaluated per query in a batch. "
                               "During training, nb negative examples is obtained by subtracting "

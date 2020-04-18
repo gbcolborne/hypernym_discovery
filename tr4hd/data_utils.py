@@ -271,7 +271,7 @@ def make_q_and_c_dataset(opt, tokenizer, queries, candidate_ids, candidate_label
             logger.info("  candidate ids: %s" % " ".join([str(x) for x in candidate_ids[i]]))
             logger.info("  candidate labels: %s" % " ".join([str(x) for x in candidate_labels[i]]))
     candidate_ids = torch.tensor(candidate_ids, dtype=torch.long)
-    candidate_labels = torch.tensor(candidate_labels, dtype=torch.long)
+    candidate_labels = torch.tensor(candidate_labels, dtype=torch.float32)
     return TensorDataset(input_ids, nb_tokens, candidate_ids, candidate_labels)
 
 

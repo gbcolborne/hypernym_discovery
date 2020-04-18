@@ -20,35 +20,17 @@ class BiEncoderScorer(torch.nn.Module):
             self.encoder_c.require_grad = True
         self.encoder_q.requires_grad = True
 
-        # Define loss
-        self.loss = torch.nn.CrossEntropyLoss()
-
     def encode_candidates(self, inputs):
         """ Encode candidates.
         Args:
         - inputs: dict containing input_ids, attention_mask, token_type_ids, langs
 
         """
-        # Transformers take can not handle 3D inputs, so we will iterate over one axis of the tensor
-        input_ids = inputs["input_ids"]
-        (nb_queries, per_query_nb_examples, max_length) = input_ids.size()
-        print("Nb queries: {}".format(nb_queries))
-        print("Per query nb examples: {}".format(per_query_nb_examples))
-        print("Max length: {}".format(max_length))
-        
-        cand_encs = []
-        for i in range(nb_queries):
-            print(i)
-            inputs_sub = {}
-            for key in inputs:
-                if inputs[key] == None:
-                    inputs_sub[key] = None
-                else:
-                    inputs_sub[key] = inputs[key][i]
-            outputs = self.encoder_c(**inputs_sub)
-            encs = outputs[0] # The last hidden states are the first element of the tuple
-            cand_encs.append(encs)
-        return torch.cat(cand_encs)
+
+        outputs = self.encoder_c(**inputs)
+        encs = outputs[0] # The last hidden states are the first element of the tuple
+        encs = encs[:,0,:] # Keep only the hidden state of BOS
+        return encs
 
     def encode_queries(self, inputs):
         """ Encode queries.
@@ -58,45 +40,70 @@ class BiEncoderScorer(torch.nn.Module):
         """
 
         outputs = self.encoder_q(**inputs)
-        query_encs = outputs[0] # The last hidden states are the first element of the tuple
-        return query_encs
+        encs = outputs[0] # The last hidden states are the first element of the tuple
+        encs = encs[:,0,:] # Keep only the hidden state of BOS        
+        return encs
         
         
-    def score_candidates(self, query_inputs, cand_inputs):
+    def score_candidates(self, query_encs, cand_encs):
         """
-        Score (query, candidate) pairs by encoding queries and candidates and taking the dot product.
+        Score pairs of query and candidate encodings by taking the cosine. Return 1-D Tensor of scores.
         Args:
-        - query_inputs: dict containing query inputs. The query inputs can be either query_encs (dims = [nb queries, hidden dim]) if the query encodings were pre-computed, or the following if the queries should be encoded on the fly: input_ids, attention_mask, token_type_ids, and langs (dims = [nb queries, max length]). 
-        - cand_inputs: dict containing candate inputs, as for queries.
+        - query_encs: Tensor (1D ro 2D)
+        - cand_encs: Tensor (1D or 2D) *Note: if both tensors are 2D, their shapes must match, as we perform a batch dot product on pairs of encodings.
 
         """
-
-        # Encode queries
-        if 'query_encs' in query_inputs:
-            query_encs = query_inputs['query_encs']
+        # Inspect input tensors
+        nb_axes = len(query_encs.size())
+        if nb_axes == 1:
+            nb_queries = 1
+            hidden_dim = query_encs.size()[0]
+        elif nb_axes == 2:
+            nb_queries, hidden_dim = query_encs.size()
         else:
-            query_encs = self.encode_queries(query_inputs)
-
-        # Encode candidates 
-        if 'cand_encs' in cand_inputs:
-            cand_encs = cand_inputs['cand_encs']
+            raise ValueError("query_encs must be 1-D or 2-D")
+        nb_axes = len(cand_encs.size())
+        if nb_axes == 1:
+            cand_hidden_dim = cand_encs.size()[0]
+        elif nb_axes == 2:
+            nb_cands, cand_hidden_dim = cand_encs.size()
         else:
-            cand_encs = self.encode_candidates(cand_inputs)
-        
+            raise ValueError("cand_encs must be 1-D or 2-D")
+        assert hidden_dim == cand_hidden_dim
+        if nb_queries > 1 and nb_cands > 1:
+            if nb_queries != nb_cands:
+                msg = "nb_queries and nb_cands must match if both tensors are 2D (in this case, we perform a batch dot product on pairs of encodings)"
+                raise ValueError(msg)
+
+        # Normalize
+        if nb_queries > 1:
+            query_encs_norm = query_encs / torch.norm(query_encs, p=2)
+        else:
+            query_encs_norm = query_encs / torch.norm(query_encs, p=2, dim=1, keepdim=True)
+        if nb_cands > 1:
+            cand_encs_norm = cand_encs / torch.norm(cand_encs, p=2)
+        else:
+            cand_encs_norm = cand_encs / torch.norm(cand_encs, p=2, dim=1, keepdim=True)
+            
         # Compute dot product
-        scores = torch.bmm(query_encs.unsqueeze(1), cand_encs.transpose(1, 2)).squeeze(1)
+        if nb_queries > 1:
+            if nb_cands > 1:
+                scores = torch.bmm(query_encs_norm.unsqueeze(1), cand_encs_norm.unsqueeze(2)).squeeze(2).squeeze(1)
+            else:
+                scores = torch.matmul(cand_encs_norm, query_encs_norm.permute(1,0))
+        else:
+            if nb_cands > 1:
+                scores = torch.matmul(query_encs_norm, cand_encs_norm.permute(1,0))
+            else:
+                scores = torch.matmul(query_encs_norm, cand_encs_norm).unsqueeze(0)
         return scores
 
-    def compute_loss(self, logits, targets):
-        """ Compute loss.
+    def forward(self, query_inputs, cand_inputs):
+        """ Forward pass from encodings to scores.
         Args:
-        - logits: unnormalized class scores. Shape is (N,C) where C = number of classes, or (N, C, d_1, d_2, ..., d_K) with K >= 1 in the case of K-dimensional loss.
-        - targets: targets. (N) where each value is 0 <= targets[i] <= C-1, or (N, d_1, d_2, ..., d_K) with K >= 1 in the case of K-dimensional loss.
+        - query_inputs: dict containing query_encs (1-D or 2-D Tensor)
+        - cand_inputs: dict containing cand_encs (1-D or 2-D Tensor)
 
         """
-
-        return self.loss(logits, targets)
-
-    def forward(self, query_inputs, cand_inputs):
-        return self.score_candidates(query_inputs, cand_inputs)
+        return self.score_candidates(query_inputs["query_encs"], cand_inputs["cand_encs"])
 
