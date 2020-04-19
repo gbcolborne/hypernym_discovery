@@ -157,13 +157,13 @@ def get_missing_inputs(opt, token_ids, nb_tokens, lang_id):
     
     # Segment IDs
     if opt.encoder_type == 'bert':
-        inputs["token_type_ids"] = torch.tensor([[SEGMENT_ID] * max_length] * nb_examples, dtype=torch.long)
+        inputs["token_type_ids"] = torch.tensor([[SEGMENT_ID] * max_length] * nb_examples, dtype=torch.long, requires_grad=False)
     else:
         inputs["token_type_ids"] = None
         
     # Language IDs
     if opt.encoder_type == 'xlm':
-        inputs["langs"] = torch.tensor([[lang_id] * max_length] * nb_examples, dtype=torch.long)
+        inputs["langs"] = torch.tensor([[lang_id] * max_length] * nb_examples, dtype=torch.long, requires_grad=False)
     else:
         inputs["langs"] = None
         
@@ -174,7 +174,7 @@ def get_missing_inputs(opt, token_ids, nb_tokens, lang_id):
         padding_length = opt.max_seq_length - nb_tok
         mask = [1] * nb_tok + [0 if MASK_PADDING_WITH_ZERO else 1] * padding_length
         attention_mask.append(mask)
-    inputs["attention_mask"] = torch.tensor(attention_mask, dtype=torch.long)
+    inputs["attention_mask"] = torch.tensor(attention_mask, dtype=torch.long, requires_grad=False)
 
     return inputs
 
@@ -197,8 +197,8 @@ def encode_string_inputs(opt, tokenizer, strings):
         nb_processed += 1
         if nb_processed % 1000 == 0:
             logger.info("  Nb strings processed: {}".format(nb_processed))
-    input_ids = torch.tensor(input_ids, dtype=torch.long)
-    nb_tokens = torch.tensor(nb_tokens, dtype=torch.long)    
+    input_ids = torch.tensor(input_ids, dtype=torch.long, requires_grad=False)
+    nb_tokens = torch.tensor(nb_tokens, dtype=torch.long, requires_grad=False)    
     return input_ids, nb_tokens
 
 def make_q_or_c_dataset(opt, tokenizer, strings):
@@ -270,8 +270,8 @@ def make_q_and_c_dataset(opt, tokenizer, queries, candidate_ids, candidate_label
             logger.info("  nb tokens (without padding): {}".format(nb_tokens[i]))
             logger.info("  candidate ids: %s" % " ".join([str(x) for x in candidate_ids[i]]))
             logger.info("  candidate labels: %s" % " ".join([str(x) for x in candidate_labels[i]]))
-    candidate_ids = torch.tensor(candidate_ids, dtype=torch.long)
-    candidate_labels = torch.tensor(candidate_labels, dtype=torch.float32)
+    candidate_ids = torch.tensor(candidate_ids, dtype=torch.long, requires_grad=False)
+    candidate_labels = torch.tensor(candidate_labels, dtype=torch.float32, requires_grad=False)
     return TensorDataset(input_ids, nb_tokens, candidate_ids, candidate_labels)
 
 

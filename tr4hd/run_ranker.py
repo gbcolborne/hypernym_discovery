@@ -337,7 +337,7 @@ def train(opt, model, tokenizer):
         # train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
         # train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
  
-        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=opt.local_rank not in [-1, 0])
+        epoch_iterator = tqdm(train_dataloader, desc="Step (batch)", disable=opt.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
             # Unpack batch
             query_input_ids = batch[0]
@@ -351,24 +351,22 @@ def train(opt, model, tokenizer):
             query_encs = encode_batch(opt, model, tokenizer, query_batch, grad=True, these_are_candidates=False)
             
             # Iterate over candidate indices, accumulate gradients
-            for sub_step, cand_ix in enumerate(range(opt.per_query_nb_examples)):
+            step_iterator = trange(int(opt.per_query_nb_examples), desc="Substep", disable=opt.local_rank not in [-1, 0])
+            for sub_step, cand_ix in enumerate(step_iterator):
                 # Encode the <batch_size> candidates at this candidate index
                 cand_ids_sub = cand_ids[:,cand_ix]
                 cand_input_ids_sub = cand_input_ids[cand_ids_sub]
                 cand_nb_tokens_sub = cand_nb_tokens[cand_ids_sub]
                 cand_batch = (cand_input_ids_sub, cand_nb_tokens_sub)
                 cand_encs = encode_batch(opt, model, tokenizer, cand_batch, grad=True, these_are_candidates=True)
-
+                
                 # Forward pass on <batch_size> pairs of (query, candidate) encodings
                 scores = model({'query_encs': query_encs}, {'cand_encs':cand_encs})
 
                 # Compute loss
                 labels_sub = labels[:,cand_ix]
                 sub_loss = compute_loss(scores, labels_sub)
-
-                print(sub_loss)
                 sub_loss = sub_loss / opt.per_query_nb_examples
-
                 if opt.n_gpu > 1:
                     sub_loss = sub_loss.mean() # mean() to average on multi-gpu parallel training
                 if opt.gradient_accumulation_steps > 1:
@@ -377,15 +375,19 @@ def train(opt, model, tokenizer):
                 # Backprop
                 if opt.fp16:
                     with amp.scale_loss(sub_loss, optimizer) as scaled_loss:
-                        scaled_loss.backward(retain_graph=True)
+                        scaled_loss.backward()
                 else:
                     sub_loss.backward(retain_graph=True)
-                # We retained the graph to not free the sub-graph for the forward pass of the query encoder, which we want to re-use. Free the candidate encodings sub-graph.
-                cand_encs = cand_encs.detach()
-                
-                tr_loss += sub_loss                
+
+                # Add loss scalar to total loss
+                tr_loss += sub_loss.item()
                 global_sub_step += 1
-                
+
+                # Delete stuff to free memory 
+                del cand_encs
+                del scores
+                del sub_loss
+
             # Check if we update or accumulate gradient
             if (step + 1) % opt.gradient_accumulation_steps == 0:
                 # Clip grad
