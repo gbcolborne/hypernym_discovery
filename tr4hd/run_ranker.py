@@ -479,7 +479,7 @@ def main():
                         help="Pretrained tokenizer name or path if not the same as encoder_name")
     parser.add_argument("--encoder_cache_dir", default="", type=str,
                         help="Where do you want to store the pre-trained models (encoders) downloaded from s3")
-    parser.add_argument("--max_seq_length", default=128, type=int,
+    parser.add_argument("--max_seq_length", default=32, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
     parser.add_argument("--do_train", action='store_true',
@@ -554,7 +554,10 @@ def main():
         raise ValueError("Model directory ({}) already exists and is not empty. Use --overwrite_model_dir to overcome.".format(opt.model_dir))
     if os.path.exists(opt.eval_dir) and os.listdir(opt.eval_dir) and not opt.overwrite_eval_dir:
         raise ValueError("Eval directory ({}) already exists and is not empty. Use --overwrite_eval_dir to overcome.".format(opt.eval_dir))
-
+    opt.max_length = opt.max_seq_length
+    if opt.encoder_type == 'xlm':
+        opt.max_position_embeddings = opt.max_seq_length
+    
     # Setup distant debugging if needed
     if opt.server_ip and opt.server_port:
         # Distant debugging - see https://code.visualstudio.com/docs/python/debugging#_attach-to-a-local-script
@@ -587,9 +590,6 @@ def main():
     # Set up task
     task = "hyperdisco"
     num_labels = 2
-    opt.MAX_CANDIDATE_LENGTH = 20
-    opt.MAX_QUERY_LENGTH = 20
-    
 
     # Training
     if opt.do_train:
@@ -615,7 +615,8 @@ def main():
                                                          from_tf=bool('.ckpt' in opt.encoder_name_or_path),
                                                          config=config,
                                                          cache_dir=opt.encoder_cache_dir if opt.encoder_cache_dir else None)
-    
+        print(config)
+
         # End of barrier
         if opt.local_rank == 0:
             torch.distributed.barrier()  
