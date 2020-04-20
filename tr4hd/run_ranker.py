@@ -403,7 +403,7 @@ def train(opt, model, tokenizer):
                     model.zero_grad()
 
             # Check if we update using accumulated gradients
-            if not update_on_substeps:
+            if not opt.update_on_substeps:
                 clip_grad(opt, model, optimizer)
                 optimizer.step()
                 model.zero_grad()
