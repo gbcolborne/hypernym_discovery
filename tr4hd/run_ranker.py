@@ -439,11 +439,11 @@ def train(opt, model, tokenizer):
                 output_dir = os.path.join(opt.model_dir, '{}-{}'.format(checkpoint_prefix, global_step))
                 if not os.path.exists(output_dir) and opt.local_rank in [-1,0]:
                     os.makedirs(output_dir)
-            model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
-            torch.save(model_to_save.state_dict(), os.path.join(output_dir, 'state_dict.pkl'))
-            torch.save(opt, os.path.join(output_dir, 'training_args.bin'))
-            logger.info("Saving model checkpoint to %s", output_dir)
-            rotate_checkpoints(opt.save_total_limit, opt.model_dir, checkpoint_prefix)
+                model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
+                logger.info("Saving model checkpoint to %s", output_dir)
+                torch.save(model_to_save.state_dict(), os.path.join(output_dir, 'state_dict.pkl'))
+                torch.save(opt, os.path.join(output_dir, 'training_args.bin'))
+                rotate_checkpoints(opt.save_total_limit, opt.model_dir, checkpoint_prefix)
                     
             if opt.max_steps > 0 and global_step > opt.max_steps:
                 epoch_iterator.close()
