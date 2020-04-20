@@ -241,6 +241,14 @@ def evaluate(opt, model, eval_data, cand_inputs):
     logger.info("  loss: {}".format(avg_loss))
     return results
 
+def clip_grad(opt, model, optimizer):
+    """ Clip grad norm in place. """
+    if opt.fp16:
+        torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), opt.max_grad_norm)
+    else:
+        torch.nn.utils.clip_grad_norm_(model.parameters(), opt.max_grad_norm)
+
+
 def train(opt, model, tokenizer):
     """
     Run training on training set, with validation on dev set after each epoch. Return model as well as a dict containing losses and scores after each epoch.
@@ -279,11 +287,11 @@ def train(opt, model, tokenizer):
     # Set number of epochs and steps 
     if opt.max_steps > 0:
         total_steps = opt.max_steps # One step per batch of queries
-        total_sub_steps = total_steps * opt.per_query_nb_examples // opt.gradient_accumulation_steps # One substep per candidate per batch of queries
-        opt.num_train_epochs = opt.max_steps // (len(train_dataloader) // opt.gradient_accumulation_steps) + 1
+        total_substeps = total_steps * opt.per_query_nb_examples # One substep per candidate per batch of queries
+        opt.num_train_epochs = opt.max_steps // len(train_dataloader) + 1
     else:
         total_steps = opt.num_train_epochs * len(train_dataloader) 
-        total_sub_steps = total_steps * opt.per_query_nb_examples // opt.gradient_accumulation_steps
+        total_substeps = total_steps * opt.per_query_nb_examples 
         
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
@@ -315,17 +323,18 @@ def train(opt, model, tokenizer):
     logger.info("***** Running training *****")
     logger.info("  Nb queries = %d", len(train_set))
     logger.info("  Nb candidates = %d", nb_candidates)
-    logger.info("  Batch size (nb queries) = %d", opt.train_batch_size)
-    logger.info("  Nb candidates evaluated per query = %d", opt.per_query_nb_examples)
+    logger.info("  Batch size = %d queries", opt.train_batch_size)
+    logger.info("  Sub-batch size = %d candidates/query", opt.per_query_nb_examples)
     logger.info("  Nb Epochs = %d", opt.num_train_epochs)
-    logger.info("  Instantaneous batch size per GPU = %d", opt.per_gpu_train_batch_size)
-    logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d queries",
-                   opt.train_batch_size * opt.gradient_accumulation_steps * (torch.distributed.get_world_size() if opt.local_rank != -1 else 1))
-    logger.info("  Gradient Accumulation steps = %d", opt.gradient_accumulation_steps)
-    logger.info("  Total optimization steps (one per batch of queries) = %d", total_steps)
-    logger.info("  Total optimization steps (one per candidate per batch of queries) = %d", total_sub_steps)    
+    logger.info("  Instantaneous batch size per GPU = %d queries", opt.per_gpu_train_batch_size)
+    logger.info("  Total train batch size (w. parallel & distributed) = %d queries",
+                   opt.train_batch_size * (torch.distributed.get_world_size() if opt.local_rank != -1 else 1))
+    if opt.update_on_substeps:
+        logger.info("  Total optimization steps (one per candidate per batch of queries) = %d", total_substeps)
+    else:
+        logger.info("  Total optimization steps (one per batch of queries) = %d", total_steps)
     global_step = 0
-    global_sub_step = 0
+    global_substep = 0
     tr_loss, logging_loss = 0.0, 0.0
     train_iterator = trange(int(opt.num_train_epochs), desc="Epoch", disable=opt.local_rank not in [-1, 0])
     set_seed(opt.seed)  
@@ -352,7 +361,7 @@ def train(opt, model, tokenizer):
             
             # Iterate over candidate indices, accumulate gradients
             step_iterator = trange(int(opt.per_query_nb_examples), desc="Substep", disable=opt.local_rank not in [-1, 0])
-            for sub_step, cand_ix in enumerate(step_iterator):
+            for substep, cand_ix in enumerate(step_iterator):
                 # Encode the <batch_size> candidates at this candidate index
                 cand_ids_sub = cand_ids[:,cand_ix]
                 cand_input_ids_sub = cand_input_ids[cand_ids_sub]
@@ -369,8 +378,6 @@ def train(opt, model, tokenizer):
                 sub_loss = sub_loss / opt.per_query_nb_examples
                 if opt.n_gpu > 1:
                     sub_loss = sub_loss.mean() # mean() to average on multi-gpu parallel training
-                if opt.gradient_accumulation_steps > 1:
-                    sub_loss = sub_loss / opt.gradient_accumulation_steps
 
                 # Backprop
                 if opt.fp16:
@@ -381,26 +388,28 @@ def train(opt, model, tokenizer):
 
                 # Add loss scalar to total loss
                 tr_loss += sub_loss.item()
-                global_sub_step += 1
+                global_substep += 1
 
                 # Delete stuff to free memory 
                 del cand_encs
                 del scores
                 del sub_loss
 
-            # Check if we update or accumulate gradient
-            if (step + 1) % opt.gradient_accumulation_steps == 0:
-                # Clip grad
-                if opt.fp16:
-                    torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), opt.max_grad_norm)
-                else:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), opt.max_grad_norm)
+                # Check if we update or accumulate gradient
+                if opt.update_on_substeps:
+                    clip_grad(opt, model, optimizer)
+                    optimizer.step()
+                    model.zero_grad()
 
-                # Update model 
+            # Check if we update using accumulated gradients
+            if not update_on_substeps:
+                clip_grad(opt, model, optimizer)
                 optimizer.step()
                 model.zero_grad()
-                scheduler.step()  
-                global_step += 1
+
+            # Update scheduler
+            scheduler.step()  
+            global_step += 1
 
             # Check if we log loss and validation metrics
             if opt.local_rank in [-1, 0] and opt.logging_steps > 0 and global_step % opt.logging_steps == 0:
@@ -421,7 +430,7 @@ def train(opt, model, tokenizer):
                 logs['loss'] = loss_scalar
                 for key, value in logs.items():
                     tb_writer.add_scalar(key, value, global_step)
-                    # logger.info("  " + json.dumps({**logs, **{'step': global_step}}))
+                    #logger.info("  " + json.dumps({**logs, **{'step': global_step}}))
                     
             # Check if we save model checkpoint
             if opt.local_rank in [-1, 0] and opt.save_steps > 0 and global_step % opt.save_steps == 0:
@@ -493,18 +502,19 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
 
-    parser.add_argument("--freeze_cand_encoder", action='store_true',
-                        help="Freeze weights of candidate encoder.")
-    parser.add_argument("--per_query_nb_examples", default=50, type=int, 
-                        help=("Nb candidates evaluated per query in a batch. "
-                              "During training, nb negative examples is obtained by subtracting "
-                              "the number of positive examples for a given query."))
-    parser.add_argument("--per_gpu_train_batch_size", default=8, type=int,
-                        help="Batch size (nb queries) per GPU/CPU for training.")
     parser.add_argument("--per_gpu_eval_batch_size", default=8, type=int,
                         help="Batch size (nb queries) per GPU/CPU for evaluation.")
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
-                        help="Number of updates steps to accumulate before performing a backward/update pass.")     
+    parser.add_argument("--per_gpu_train_batch_size", default=8, type=int,
+                        help="Batch size (nb queries) per GPU/CPU for training.")
+    parser.add_argument("--per_query_nb_examples", default=50, type=int, 
+                        help=("Nb candidates evaluated per query in a batch during training. "
+                              "Nb negative examples is obtained by subtracting "
+                              "the number of positive examples for a given query."))
+    parser.add_argument('--update_on_substeps', action='store_true',
+                        help=("Update at each sub-step during training, rather than accumulating gradients "
+                              "for the batch of queries and updating only once"))
+    parser.add_argument("--freeze_cand_encoder", action='store_true',
+                        help="Freeze weights of candidate encoder during training.")
     parser.add_argument("--learning_rate", default=5e-5, type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--weight_decay", default=0.0, type=float,
