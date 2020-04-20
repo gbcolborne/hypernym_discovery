@@ -361,7 +361,7 @@ def train(opt, model, tokenizer):
             query_encs = encode_batch(opt, model, tokenizer, query_batch, grad=True, these_are_candidates=False)
             
             # Iterate over candidate indices, accumulate gradients
-            step_iterator = trange(int(opt.per_query_nb_examples), desc="Substep", disable=opt.local_rank not in [-1, 0])
+            step_iterator = trange(int(opt.per_query_nb_examples), desc="Substep", leave=False, disable=opt.local_rank not in [-1, 0])
             for substep, cand_ix in enumerate(step_iterator):
                 # Encode the <batch_size> candidates at this candidate index
                 cand_ids_sub = cand_ids[:,cand_ix]
