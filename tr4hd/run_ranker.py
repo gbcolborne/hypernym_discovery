@@ -77,7 +77,7 @@ def encode_all_inputs(opt, model, tokenizer, inputs, grad=False, these_are_candi
     sampler = SequentialSampler(inputs)
     dataloader = DataLoader(inputs, sampler=sampler, batch_size=batch_size)
     all_encs = []
-    for batch in tqdm(dataloader, desc="Encoding"):
+    for batch in tqdm(dataloader, desc="Encoding {}".format("candidates" if these_are_candidates else "queries"), leave=False):
         encs = encode_batch(opt, model, tokenizer, batch, grad=grad, these_are_candidates=these_are_candidates)
         all_encs.append(encs)
     all_encs = torch.cat(all_encs)
@@ -92,7 +92,7 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
     - model
     - tokenizer
     - query_inputs:  TensorDataset containing: input_ids, nb_tokens
-    - cand_encs:     TensorDataset containing: input_ids, nb_tokens
+    - cand_inputs:     TensorDataset containing: input_ids, nb_tokens
 
     """
 
@@ -110,26 +110,19 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
     sampler = SequentialSampler(cand_inputs) 
     dataloader = DataLoader(cand_inputs, sampler=sampler, batch_size=opt.eval_batch_size)
     
-    all_y_probs = []
+    y_probs = np.zeros((len(query_inputs), len(cand_inputs)), dtype=np.float32)
     model.eval()
+    batch_start = 0
     for batch in tqdm(dataloader, desc="Predicting"):
-        y_probs = None
         # Encode batch of candidates
         cand_encs = encode_batch(opt, model, tokenizer, batch, grad=False, these_are_candidates=True)
-        # Loop over batches of query encodings
-        with torch.no_grad():
-            start = 0
-            end = opt.eval_batch_size
-            while start < len(query_encs):
-                scores = model({'query_encs': query_encs[start:end]}, {'cand_encs':cand_encs})
-                if y_probs is None:
-                    y_probs = scores.detach().cpu().numpy()
-                else:
-                    y_probs = np.append(y_probs, scores.detach().cpu().numpy(), axis=0)
-                start = end
-                end += opt.eval_batch_size
-        all_y_probs.append(y_probs)
-    return all_y_probs
+        batch_size = len(cand_encs)
+        for query_ix in range(len(query_encs)):
+            with torch.no_grad():
+                scores = model({'query_encs': query_encs[query_ix]}, {'cand_encs':cand_encs})
+            scores = scores.detach().cpu().numpy()
+            y_probs[query_ix, batch_start:batch_start+batch_size] = scores
+    return y_probs
 
 
 def get_top_k_candidates_and_scores(scores):
@@ -177,15 +170,15 @@ def predict(opt, model, tokenizer):
     # Write top k candidates and scores
     path_top_candidates = os.path.join(opt.eval_dir, "test_top_{}_candidates.tsv".format(RANKING_CUTOFF))
     path_top_scores = os.path.join(opt.eval_dir, "test_top_{}_scores.tsv".format(RANKING_CUTOFF))
-    logger.info("Writing top {} candidates for each query to {}".format(RANKING_CUTOFF, path_top_candidates))
-    logger.info("Writing top {} scores for each query to {}".format(RANKING_CUTOFF, path_top_scores))
+    logger.info("  Writing top {} candidates for each query to {}".format(RANKING_CUTOFF, path_top_candidates))
+    logger.info("  Writing top {} scores for each query to {}".format(RANKING_CUTOFF, path_top_scores))
     with open(path_top_candidates, 'w') as fc, open(path_top_scores, 'w') as fs:
         for i, topk in enumerate(top_candidates_and_scores):
             fc.write("{}\n".format("\t".join([candidates[c] for (c,s) in topk])))
             fs.write("{}\n".format("\t".join(["{:.5f}".format(s) for (c,s) in topk])))
             query = queries[i]
             topk_string = ', '.join(["('{}',{:.5f})".format(candidates[c],s) for (c,s) in topk])
-            logger.info("{}. Top candidates for '{}': {}".format(i+1, query, topk_string))
+            logger.info("  {}. Top candidates for '{}': {}".format(i+1, query, topk_string))
     return
 
 
@@ -213,7 +206,7 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     y_probs = torch.tensor(y_probs, dtype=torch.float32, device=opt.device)
 
     # Get labels
-    y_true = eval_data.tensors[5]
+    y_true = eval_data.tensors[3]
     
     # Compute loss
     loss = compute_loss(y_probs, y_true)
@@ -259,7 +252,7 @@ def train(opt, model, tokenizer):
 
     # Create writer for tensorboard data
     if opt.local_rank in [-1, 0]:
-        tb_writer = SummaryWriter()
+        tb_writer = SummaryWriter(log_dir=opt.eval_dir)
 
     # Make training set
     train_data = load_hd_data(opt, 'train')
@@ -322,6 +315,7 @@ def train(opt, model, tokenizer):
     logger.info("  Nb queries = %d", len(train_set))
     logger.info("  Nb candidates = %d", nb_candidates)
     logger.info("  Batch size = %d queries", opt.train_batch_size)
+    logger.info("  Nb batches = %d", len(train_dataloader))
     logger.info("  Sub-batch size = %d candidates/query", opt.per_query_nb_examples)
     logger.info("  Nb Epochs = %d", opt.num_train_epochs)
     logger.info("  Instantaneous batch size per GPU = %d queries", opt.per_gpu_train_batch_size)
@@ -437,7 +431,7 @@ def train(opt, model, tokenizer):
                 if not os.path.exists(output_dir) and opt.local_rank in [-1,0]:
                     os.makedirs(output_dir)
                 model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
-                logger.info("Saving model checkpoint to %s", output_dir)
+                logger.info("  Saving model checkpoint to %s", output_dir)
                 torch.save(model_to_save.state_dict(), os.path.join(output_dir, 'state_dict.pkl'))
                 torch.save(opt, os.path.join(output_dir, 'training_args.bin'))
                 rotate_checkpoints(opt.save_total_limit, opt.model_dir, checkpoint_prefix)
@@ -585,7 +579,7 @@ def main():
     logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                         datefmt = '%m/%d/%Y %H:%M:%S',
                         level = logging.INFO if opt.local_rank in [-1, 0] else logging.WARN)
-    logger.warning("Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
+    logger.warning("  Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
                     opt.local_rank, device, opt.n_gpu, bool(opt.local_rank != -1), opt.fp16)
 
     # Set seed
@@ -596,6 +590,7 @@ def main():
     num_labels = 2
 
     # Training
+    config_class, model_class, tokenizer_class = MODEL_CLASSES[opt.encoder_type]    
     if opt.do_train:
         # Create model directory if needed
         if not os.path.exists(opt.model_dir) and opt.local_rank in [-1, 0]:
@@ -607,7 +602,6 @@ def main():
 
         # Load pretrained encoder and tokenizer
         opt.encoder_type = opt.encoder_type.lower()
-        config_class, model_class, tokenizer_class = MODEL_CLASSES[opt.encoder_type]
         config = config_class.from_pretrained(opt.encoder_config_name if opt.encoder_config_name else opt.encoder_name_or_path,
                                               num_labels=num_labels,
                                               finetuning_task=task,
@@ -630,13 +624,13 @@ def main():
         model.to(opt.device)
 
         # Run training loop
-        logger.info("Training/evaluation parameters %s", opt)
+        logger.info("  Training/evaluation parameters %s", opt)
         global_step, tr_loss = train(opt, model, tokenizer)
-        logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
+        logger.info("    global_step = %s, average loss = %s", global_step, tr_loss)
 
         # Save model and tokenizer
         if opt.local_rank == -1 or torch.distributed.get_rank() == 0:
-            logger.info("Saving model to %s", opt.model_dir)
+            logger.info("  Saving model to %s", opt.model_dir)
             model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
             tokenizer.save_pretrained(opt.model_dir)
             torch.save(model_to_save.state_dict(), os.path.join(opt.model_dir, 'state_dict.pkl'))
@@ -663,7 +657,6 @@ def main():
         cand_inputs = make_candidate_set(opt, tokenizer, dev_data)
 
         # Load tokenizer and model
-        logger.info("Evaluate model on dev set")
         eval_results = evaluate(opt, model_to_eval, tokenizer, dev_set, cand_inputs)
 
     # Prediction on test set
