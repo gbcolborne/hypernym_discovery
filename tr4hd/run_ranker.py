@@ -213,7 +213,7 @@ def evaluate(opt, model, eval_data, cand_inputs):
 
     # Get model predictions
     y_probs = get_model_predictions(opt, model, tokenizer, eval_data, cand_inputs)
-    y_probs = torch.tensor(y_probs, dtype=torch.float32)
+    y_probs = torch.tensor(y_probs, dtype=torch.float32, device=opt.device)
 
     # Get labels
     y_true = eval_data.tensors[5]
