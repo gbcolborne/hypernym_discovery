@@ -41,6 +41,7 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
+    
 def encode_batch(opt, model, tokenizer, batch, grad=False, these_are_candidates=False):
     """ Encode batch of queries or candidates. 
     Args:
@@ -62,39 +63,36 @@ def encode_batch(opt, model, tokenizer, batch, grad=False, these_are_candidates=
         with torch.no_grad():
             encs = model.encode_candidates(inputs) if these_are_candidates else model.encode_queries(inputs)
     return encs
-    
-def encode_candidates(opt, model, tokenizer, candidate_inputs, grad=False, batch_size=128):
-    """ Encode candidates. Return Tensor of candidate encodings.
+
+
+def encode_all_inputs(opt, model, tokenizer, inputs, grad=False, these_are_candidates=False, batch_size=128):
+    """ Encode all inputs (candidates or queries). Return Tensor of encodings.
     Args:
     - opt
     - model
     - tokenizer
-    - candidate_inputs: TensorDataset containing input_ids, nb_tokens
-    - grad: compute gradient
-    - batch_size
+    - inputs: TensorDataset containing input_ids, nb_tokens
 
     """
-    sampler = SequentialSampler(candidate_inputs)
-    dataloader = DataLoader(candidate_inputs, sampler=sampler, batch_size=batch_size)
-    logger.info("  Num candidates = %d", len(candidate_inputs))
-    logger.info("  Batch size = %d", batch_size)
-    cand_encs = []
+    sampler = SequentialSampler(inputs)
+    dataloader = DataLoader(inputs, sampler=sampler, batch_size=batch_size)
+    all_encs = []
     for batch in tqdm(dataloader, desc="Encoding"):
-        encs = encode_batch(opt, model, tokenizer, batch, grad=grad, these_are_candidates=True)
-        cand_encs.append(encs)
-    cand_encs = torch.cat(cand_encs)
-    return cand_encs
+        encs = encode_batch(opt, model, tokenizer, batch, grad=grad, these_are_candidates=these_are_candidates)
+        all_encs.append(encs)
+    all_encs = torch.cat(all_encs)
+    return all_encs
 
 
-def get_model_predictions(opt, model, tokenizer, query_inputs, cand_encs):
+def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
     """
     Get model predictions for queries (without grad). Return scores.
     Args:
     - opt
     - model
     - tokenizer
-    - query_inputs: TensorDataset containing: input_ids, nb_tokens
-    - cand_encs: Tensor containing all candidate encodings.
+    - query_inputs:  TensorDataset containing: input_ids, nb_tokens
+    - cand_encs:     TensorDataset containing: input_ids, nb_tokens
 
     """
 
@@ -105,29 +103,34 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_encs):
     # Set batch size
     opt.eval_batch_size = opt.per_gpu_eval_batch_size * max(1, opt.n_gpu)
 
-    # Make loader for queries
-    sampler = SequentialSampler(query_inputs) 
-    dataloader = DataLoader(query_inputs, sampler=sampler, batch_size=opt.eval_batch_size)
+    # Encode all queries
+    query_encs = encode_all_inputs(opt, model, tokenizer, query_inputs, grad=False, these_are_candidates=False, batch_size=opt.eval_batch_size)
 
-    # Start eval
-    logger.info("  Nb queries = %d", len(query_inputs))
-    logger.info("  Nb candidates = %d", len(cand_encs))
-    logger.info("  Nb batches = %d", opt.eval_batch_size)
+    # Make loader for candidates
+    sampler = SequentialSampler(cand_inputs) 
+    dataloader = DataLoader(cand_inputs, sampler=sampler, batch_size=opt.eval_batch_size)
+    
     all_y_probs = []
     model.eval()
     for batch in tqdm(dataloader, desc="Predicting"):
         y_probs = None
-        # Encode queries
-        query_encs = encode_batch(opt, model, tokenizer, batch, grad=False, these_are_candidates=False)
-        for cand_id in range(len(cand_encs)):
-            with torch.no_grad():
-                scores = model({'query_encs': query_encs}, {'cand_encs':cand_encs[cand_id]})
-            if y_probs is None:
-                y_probs = scores.detach().cpu().numpy()
-            else:
-                y_probs = np.append(y_probs, scores.detach().cpu().numpy(), axis=0)
+        # Encode batch of candidates
+        cand_encs = encode_batch(opt, model, tokenizer, batch, grad=False, these_are_candidates=True)
+        # Loop over batches of query encodings
+        with torch.no_grad():
+            start = 0
+            end = opt.eval_batch_size
+            while start < len(query_encs):
+                scores = model({'query_encs': query_encs[start:end]}, {'cand_encs':cand_encs})
+                if y_probs is None:
+                    y_probs = scores.detach().cpu().numpy()
+                else:
+                    y_probs = np.append(y_probs, scores.detach().cpu().numpy(), axis=0)
+                start = end
+                end += opt.eval_batch_size
         all_y_probs.append(y_probs)
     return all_y_probs
+
 
 def get_top_k_candidates_and_scores(scores):
     """ Get top-k candidates and scores.
@@ -167,11 +170,8 @@ def predict(opt, model, tokenizer):
     # Make dataset for candidate inputs
     cand_inputs = make_candidate_set(opt, tokenizer, test_data)
 
-    # Encode candidates
-    cand_encs = encode_candidates(opt, model, tokenizer, cand_inputs, grad=False, batch_size=128)
-
     # Get top k candidates and scores
-    y_probs = get_model_predictions(opt, model, tokenizer, query_inputs, cand_encs)
+    y_probs = get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs)
     top_candidates_and_scores = get_top_k_candidates_and_scores(y_probs)
         
     # Write top k candidates and scores
@@ -188,8 +188,10 @@ def predict(opt, model, tokenizer):
             logger.info("{}. Top candidates for '{}': {}".format(i+1, query, topk_string))
     return
 
+
 def compute_loss(inputs, targets):
     return nnfunc.binary_cross_entropy(inputs, targets)
+
 
 def evaluate(opt, model, eval_data, cand_inputs):
     """ Evaluate model on labeled dataset (without grad). Return dictionary containing average loss and evaluation metrics.
@@ -207,12 +209,10 @@ def evaluate(opt, model, eval_data, cand_inputs):
     logger.info("  Nb queries: {}".format(nb_queries))
     logger.info("  Nb candidates: {}".format(nb_candidates))
 
-    # Encode candidates
     model.eval()
-    cand_encs = encode_candidates(opt, model, tokenizer, cand_inputs, grad=False, batch_size=128)
 
     # Get model predictions
-    y_probs = get_model_predictions(opt, model, tokenizer, eval_data, cand_encs)
+    y_probs = get_model_predictions(opt, model, tokenizer, eval_data, cand_inputs)
     y_probs = torch.tensor(y_probs, dtype=torch.float32)
 
     # Get labels
@@ -241,6 +241,7 @@ def evaluate(opt, model, eval_data, cand_inputs):
     logger.info("  loss: {}".format(avg_loss))
     return results
 
+
 def clip_grad(opt, model, optimizer):
     """ Clip grad norm in place. """
     if opt.fp16:
@@ -248,7 +249,7 @@ def clip_grad(opt, model, optimizer):
     else:
         torch.nn.utils.clip_grad_norm_(model.parameters(), opt.max_grad_norm)
 
-
+        
 def train(opt, model, tokenizer):
     """
     Run training on training set, with validation on dev set after each epoch. Return model as well as a dict containing losses and scores after each epoch.
@@ -458,10 +459,6 @@ def train(opt, model, tokenizer):
     return global_step, tr_loss / global_step
 
 
-
-
-
-                
 def main():
     parser = argparse.ArgumentParser()
 
