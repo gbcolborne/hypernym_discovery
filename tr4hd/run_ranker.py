@@ -193,11 +193,12 @@ def compute_loss(inputs, targets):
     return nnfunc.binary_cross_entropy(inputs, targets)
 
 
-def evaluate(opt, model, eval_data, cand_inputs):
+def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     """ Evaluate model on labeled dataset (without grad). Return dictionary containing average loss and evaluation metrics.
     Args:
     - opt
     - model
+    - tokenizer
     - eval_data: TensorDataset containing: input_ids, nb_tokens, candidate_ids, labels.
     - cand_inputs TensorDataset containing: input_ids, nb_tokens.
 
@@ -205,13 +206,9 @@ def evaluate(opt, model, eval_data, cand_inputs):
 
     nb_queries = len(eval_data)
     nb_candidates = len(cand_inputs)
-    logger.info("***** Running evaluation *****")
-    logger.info("  Nb queries: {}".format(nb_queries))
-    logger.info("  Nb candidates: {}".format(nb_candidates))
-
-    model.eval()
 
     # Get model predictions
+    model.eval()
     y_probs = get_model_predictions(opt, model, tokenizer, eval_data, cand_inputs)
     y_probs = torch.tensor(y_probs, dtype=torch.float32, device=opt.device)
 
@@ -418,7 +415,7 @@ def train(opt, model, tokenizer):
 
                 # Check if we validate on dev set
                 if opt.local_rank == -1 and opt.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
-                    results = evaluate(opt, model, dev_set, cand_inputs)
+                    results = evaluate(opt, model, tokenizer, dev_set, cand_inputs)
                     for key, value in results.items():
                         eval_key = 'eval_{}'.format(key)
                         logs[eval_key] = value
@@ -667,7 +664,7 @@ def main():
 
         # Load tokenizer and model
         logger.info("Evaluate model on dev set")
-        eval_results = evaluate(opt, model_to_eval, dev_set, cand_inputs)
+        eval_results = evaluate(opt, model_to_eval, tokenizer, dev_set, cand_inputs)
 
     # Prediction on test set
     if opt.do_pred and opt.local_rank in [-1, 0]:
