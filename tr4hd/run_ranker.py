@@ -206,7 +206,7 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     y_probs = torch.tensor(y_probs, dtype=torch.float32, device=opt.device)
 
     # Get labels
-    y_true = eval_data.tensors[3]
+    y_true = eval_data.tensors[3].to(device=opt.device)
     
     # Compute loss
     loss = compute_loss(y_probs, y_true)
@@ -217,8 +217,8 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     # Compute evaluation metrics 
     ap_scores = [] # average precision
     for i in range(nb_queries):
-        ys = y_probs[i,1]
-        yt = y_true[i]
+        ys = y_probs[i,1].cpu()
+        yt = y_true[i].cpu()
         ap = average_precision_score(y_true=yt, y_score=ys)
         ap_scores.append(ap)
 
@@ -530,7 +530,7 @@ def main():
                         help="Overwrite the content of the directory containing the model")
     parser.add_argument('--overwrite_eval_dir', action='store_true',
                         help="Overwrite the content of the directory containing the evaluation results or predictions")
-    parser.add_argument('--seed', type=int, default=42,
+    parser.add_argument('--seed', type=int, default=91500,
                         help="random seed for initialization")
 
     parser.add_argument('--fp16', action='store_true',
@@ -545,6 +545,8 @@ def main():
     opt = parser.parse_args()
 
     # Check args
+    assert opt.logging_steps != 0
+    assert opt.save_steps != 0
     if opt.do_train:
         if opt.encoder_name_or_path is None:
             raise ValueError("--encoder_name_or_path must be specified if --do_train")
