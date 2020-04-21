@@ -201,34 +201,30 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     nb_candidates = len(cand_inputs)
 
     # Get model predictions
-    model.eval()
     y_probs = get_model_predictions(opt, model, tokenizer, eval_data, cand_inputs)
-    y_probs = torch.tensor(y_probs, dtype=torch.float32, device=opt.device)
-
+    
     # Get labels
     y_true = eval_data.tensors[3].to(device=opt.device)
     
     # Compute loss
-    loss = compute_loss(y_probs, y_true)
+    loss = compute_loss(torch.tensor(y_probs, dtype=torch.float32, device=opt.device),
+                        y_true)
     total_loss = loss.item()
     avg_loss = total_loss / (nb_queries * nb_candidates)
     results = {'avg_loss': avg_loss}
 
-    # Compute evaluation metrics 
-    ap_scores = [] # average precision
+    # Convert tensor to numpy array
+    y_true = y_true.cpu().numpy()
+
+    # Compute average precision scores
+    ap_scores = [] 
     for i in range(nb_queries):
-        ys = y_probs[i,1].cpu()
-        yt = y_true[i].cpu()
-        ap = average_precision_score(y_true=yt, y_score=ys)
+        ap = average_precision_score(y_true=y_true[i], y_score=y_probs[i])
         ap_scores.append(ap)
 
     # Compute mean average precision
     MAP = np.mean(ap_scores)
     results["MAP"] = MAP
-                
-    logger.info("***** Results *****")
-    logger.info("  MAP: {}".format(MAP))
-    logger.info("  loss: {}".format(avg_loss))
     return results
 
 
