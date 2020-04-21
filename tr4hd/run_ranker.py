@@ -252,9 +252,9 @@ def train(opt, model, tokenizer):
     if opt.local_rank in [-1, 0]:
         tb_writer = SummaryWriter(log_dir=opt.eval_dir)
 
-    # Make training set
+    # Load training data
     train_data = load_hd_data(opt, 'train')
-    train_set = make_train_set(opt, tokenizer, train_data)
+
 
     # Make dev set
     dev_data = load_hd_data(opt, 'dev')
@@ -269,7 +269,8 @@ def train(opt, model, tokenizer):
     # Set batch size
     opt.train_batch_size = opt.per_gpu_train_batch_size * max(1, opt.n_gpu)
 
-    # Make data loader for training data which randomly samples queries
+    # Make training set
+    train_set = make_train_set(opt, tokenizer, train_data, verbose=True)
     train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
     train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
 
@@ -329,14 +330,13 @@ def train(opt, model, tokenizer):
     train_iterator = trange(int(opt.num_train_epochs), desc="Epoch", disable=opt.local_rank not in [-1, 0])
     set_seed(opt.seed)  
     model.zero_grad()
-    for _ in train_iterator:
-
-        # Uncomment to reload train set, so that we get new negative samples
-        # train_set = make_train_set(opt, tokenizer, train_data)
-        # train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
-        # train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
- 
-        epoch_iterator = tqdm(train_dataloader, desc="Step (batch)", disable=opt.local_rank not in [-1, 0])
+    for epoch in train_iterator:
+        if epoch > 0:
+            # Reload train set, so that we get new negative samples
+            train_set = make_train_set(opt, tokenizer, train_data, verbose=False)
+            train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
+            train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
+        epoch_iterator = tqdm(train_dataloader, desc="Step (batch)", leave=False, disable=opt.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
             # Unpack batch
             query_input_ids = batch[0]

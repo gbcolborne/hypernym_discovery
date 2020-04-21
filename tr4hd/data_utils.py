@@ -18,7 +18,8 @@ def make_candidate_set(opt, tokenizer, candidate_data):
 
     """
     candidates = candidate_data['candidates']
-    return make_q_or_c_dataset(opt, tokenizer, candidates)
+    return make_q_or_c_dataset(opt, tokenizer, candidates, verbose=True)
+
 
 def make_test_set(opt, tokenizer, test_data):
     """ Make unlabeled dataset for test set.
@@ -29,9 +30,10 @@ def make_test_set(opt, tokenizer, test_data):
 
     """
     queries = test_data["queries"]
-    return make_q_or_c_dataset(opt, tokenizer, queries)
+    return make_q_or_c_dataset(opt, tokenizer, queries, verbose=False)
 
-def make_train_set(opt, tokenizer, train_data):
+
+def make_train_set(opt, tokenizer, train_data, verbose=False):
     """ Make labeled dataset for training set. Subsample candidates using negative sampling.
     Args:
     - opt:
@@ -45,9 +47,24 @@ def make_train_set(opt, tokenizer, train_data):
     candidates = train_data["candidates"]
     gold_cand_ids = train_data["gold_hypernym_candidate_ids"]
 
-    # Subsample candidates for training (i.e. negative sampling).
+    # Shuffle positive examples
+    for i in range(len(gold_cand_ids)):
+        np.random.shuffle(gold_cand_ids[i])
+
+    # Subsample positive examples if necessary
+    nb_pos_discarded = 0
+    for i in range(len(gold_cand_ids)):
+        pos = gold_cand_ids[i]
+        if len(pos) > opt.per_query_nb_examples:
+            nb_pos_discarded += len(pos) - opt.per_query_nb_examples
+            gold_cand_ids[i] = pos[:opt.per_query_nb_examples]
+    if nb_pos_discarded > 0 and verbose:
+        msg = "  {} positive hypernyms removed because the query had more than {}".format(nb_pos_discarded, opt.per_query_nb_examples)
+        logger.warning(msg)
+
+    # Sample negative examples for training
     all_cand_ids = list(range(len(candidates)))
-    neg_cand_ids = sample_negative_examples(all_cand_ids, gold_cand_ids, opt.per_query_nb_examples)
+    neg_cand_ids = sample_negative_examples(all_cand_ids, gold_cand_ids, opt.per_query_nb_examples, verbose=verbose)
     cand_ids = []
     labels = []
     for i in range(len(queries)):
@@ -58,7 +75,8 @@ def make_train_set(opt, tokenizer, train_data):
         labels.append(y)
 
     # Build dataset
-    return make_q_and_c_dataset(opt, tokenizer, queries, cand_ids, candidate_labels=labels, verbose=True)
+    return make_q_and_c_dataset(opt, tokenizer, queries, cand_ids, candidate_labels=labels, verbose=verbose)
+
 
 def make_dev_set(opt, tokenizer, dev_data):
     """ Make labeled dataset for validation data. Include all candidates for evaluation.
@@ -86,7 +104,8 @@ def make_dev_set(opt, tokenizer, dev_data):
     # Build dataset
     return make_q_and_c_dataset(opt, tokenizer, queries, cand_ids, candidate_labels=labels, verbose=False)
 
-def sample_negative_examples(candidate_ids, pos_candidate_ids, per_query_nb_examples):
+
+def sample_negative_examples(candidate_ids, pos_candidate_ids, per_query_nb_examples, verbose=False):
     """ Sample negative examples.
 
     Args:
@@ -95,20 +114,16 @@ def sample_negative_examples(candidate_ids, pos_candidate_ids, per_query_nb_exam
     - per_query_nb_examples: sum of number of positive and negative examples per query. Note: if any queries have more than this number of positive examples, some will be discarded.
     
     """
-    
-    logger.info("  Sampling negative examples with per_query_nb_examples={}".format(per_query_nb_examples))
+    if verbose:
+        logger.info("  Sampling negative examples with per_query_nb_examples={}".format(per_query_nb_examples))
     # Sample a bunch of indices at once to save time on generating random candidate indices
     buffer_size = 1000000
     sampled_indices = np.random.randint(len(candidate_ids), size=buffer_size)
     nb_queries = len(pos_candidate_ids)
     neg_candidate_ids = []
-    nb_pos_discarded = 0
     buffer_index = 0
     for i in range(nb_queries):
         pos = pos_candidate_ids[i]
-        if len(pos) > per_query_nb_examples:
-            nb_pos_discarded += len(pos) - per_query_nb_examples
-            pos_candidate_ids[i] = pos[:per_query_nb_examples]
         pos_set = set(pos)
         nb_neg = max(0, per_query_nb_examples-len(pos))
         neg = []
@@ -122,9 +137,6 @@ def sample_negative_examples(candidate_ids, pos_candidate_ids, per_query_nb_exam
             if candidate_ids[sampled_index] not in pos_set:
                 neg.append(candidate_ids[sampled_index])
         neg_candidate_ids.append(neg)
-    if nb_pos_discarded > 0:
-        msg = "  {} positive hypernyms removed because the query had more than {}".format(nb_pos_discarded, per_query_nb_examples)
-        logger.warning(msg)
     return neg_candidate_ids
 
 
@@ -139,6 +151,7 @@ def load_hypernyms(path):
             h_list = line.strip().split("\t")
             hypernyms.append(h_list)
     return hypernyms
+
 
 def get_missing_inputs(opt, token_ids, nb_tokens, lang_id):
     """ Given a tensor of padded token ids and a tensor indicating the number of actual (non padding tokens) per example, return dict containing additional inputs needed to feed the transformer.
@@ -179,7 +192,7 @@ def get_missing_inputs(opt, token_ids, nb_tokens, lang_id):
     return inputs
 
 
-def encode_string_inputs(opt, tokenizer, strings):
+def encode_string_inputs(opt, tokenizer, strings, verbose=False):
     """ Tokenize strings and return 2 tensors: input_ids (padded), nb_tokens (not including padding)
 
     """
@@ -195,24 +208,24 @@ def encode_string_inputs(opt, tokenizer, strings):
         token_ids += [PAD_TOKEN] * padding_length
         input_ids.append(token_ids)
         nb_processed += 1
-        if nb_processed % 1000 == 0:
+        if verbose and nb_processed % 5000 == 0:
             logger.info("  Nb strings processed: {}".format(nb_processed))
     input_ids = torch.tensor(input_ids, dtype=torch.long, requires_grad=False, device=opt.device)
     nb_tokens = torch.tensor(nb_tokens, dtype=torch.long, requires_grad=False, device=opt.device)    
     return input_ids, nb_tokens
 
-def make_q_or_c_dataset(opt, tokenizer, strings):
+
+def make_q_or_c_dataset(opt, tokenizer, strings, verbose=False):
     """ Create an unlabeled dataset for inputs to an encoder (for queries or candidates). 
 
     """
     nb_strings = len(strings)
-    logger.info("***** Making dataset ******")
-    logger.info("  Nb strings (queries or candidates): {}".format(nb_strings))
-    logger.info("  Max length: {}".format(opt.max_seq_length))
-    input_ids, nb_tokens = encode_string_inputs(opt, tokenizer, strings)
+    if verbose:
+        logger.info("***** Making dataset of string inputs (queries or candidates) ******")
+        logger.info("  Nb strings: {}".format(nb_strings))
+        logger.info("  Max length: {}".format(opt.max_seq_length))
+    input_ids, nb_tokens = encode_string_inputs(opt, tokenizer, strings, verbose=verbose)
     return TensorDataset(input_ids, nb_tokens)
-
-
 
 
 def make_q_and_c_dataset(opt, tokenizer, queries, candidate_ids, candidate_labels=None, verbose=False):
@@ -252,14 +265,14 @@ def make_q_and_c_dataset(opt, tokenizer, queries, candidate_ids, candidate_label
                     nb_neg_examples += 1
                 else:
                     raise ValueError("unrecognized label '{}'".format(label))
-    
-    logger.info("***** Making dataset ******")
-    logger.info("  Nb queries: {}".format(nb_queries))
-    if candidate_labels:
-        logger.info("  Nb positive examples: {}".format(nb_pos_examples))
-        logger.info("  Nb negative examples: {}".format(nb_neg_examples))
-    logger.info("  Max length: {}".format(opt.max_seq_length))
-    input_ids, nb_tokens = encode_string_inputs(opt, tokenizer, queries)
+    if verbose:
+        logger.info("***** Making dataset ******")
+        logger.info("  Nb queries: {}".format(nb_queries))
+        if candidate_labels:
+            logger.info("  Nb positive examples: {}".format(nb_pos_examples))
+            logger.info("  Nb negative examples: {}".format(nb_neg_examples))
+            logger.info("  Max length: {}".format(opt.max_seq_length))
+    input_ids, nb_tokens = encode_string_inputs(opt, tokenizer, queries, verbose=verbose)
     # Log a few examples
     if verbose:
         for i in range(5):
