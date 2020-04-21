@@ -19,7 +19,7 @@ from tqdm import tqdm, trange
 from transformers import WEIGHTS_NAME 
 from transformers import BertConfig, BertModel, BertTokenizer
 from transformers import XLMConfig, XLMModel, XLMTokenizer
-from transformers import AdamW, get_linear_schedule_with_warmup
+from transformers import AdamW
 from sklearn.metrics import average_precision_score
 from data_utils import make_train_set, make_dev_set, make_test_set, make_candidate_set, load_hd_data, rotate_checkpoints, get_missing_inputs
 from BiEncoderScorer import BiEncoderScorer
@@ -183,8 +183,7 @@ def predict(opt, model, tokenizer):
 
 
 def compute_loss(logits, targets):
-    outputs = torch.sigmoid(logits)
-    return F.binary_cross_entropy(outputs, targets)
+    return F.binary_cross_entropy_with_logits(logits, targets)
 
 
 def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
@@ -283,15 +282,13 @@ def train(opt, model, tokenizer):
         total_steps = opt.num_train_epochs * len(train_dataloader) 
         total_substeps = total_steps * opt.per_query_nb_examples 
         
-    # Prepare optimizer and schedule (linear warmup and decay)
+    # Prepare optimizer 
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': opt.weight_decay},
         {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=opt.learning_rate, eps=opt.adam_epsilon)
-    # Scheduler will only step once per batch of queries
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=opt.warmup_steps, num_training_steps=total_steps)
     if opt.fp16:
         try:
             from apex import amp
@@ -362,7 +359,7 @@ def train(opt, model, tokenizer):
                 
                 # Forward pass on <batch_size> pairs of (query, candidate) encodings
                 scores = model({'query_encs': query_encs}, {'cand_encs':cand_encs})
-
+                
                 # Compute loss
                 labels_sub = labels[:,cand_ix]
                 sub_loss = compute_loss(scores, labels_sub)
@@ -377,32 +374,25 @@ def train(opt, model, tokenizer):
                 else:
                     sub_loss.backward(retain_graph=True)
 
-                # Add loss scalar to total loss
-                step_loss += sub_loss.item()
-                global_substep += 1
-
-                # Delete stuff to free memory 
-                del cand_encs
-                del scores
-                del sub_loss
-
                 # Check if we update or accumulate gradient
                 if opt.update_on_substeps:
                     clip_grad(opt, model, optimizer)
                     optimizer.step()
                     model.zero_grad()
 
+                # Add loss scalar to total loss
+                step_loss += sub_loss.item()
+                global_substep += 1
+
             global_step += 1
             tr_loss += step_loss
-                    
+            logger.info("  {}".format(step_loss))
+            
             # Check if we update using accumulated gradients
             if not opt.update_on_substeps:
                 clip_grad(opt, model, optimizer)
                 optimizer.step()
                 model.zero_grad()
-
-            # Update scheduler
-            scheduler.step()  
 
             # Check if we log loss and validation metrics
             if opt.local_rank in [-1, 0] and opt.logging_steps > 0 and global_step % opt.logging_steps == 0:
@@ -418,8 +408,6 @@ def train(opt, model, tokenizer):
                 # Log loss on training set and learning rate
                 loss_scalar = (tr_loss - logging_loss) / opt.logging_steps
                 logging_loss = tr_loss
-                learning_rate_scalar = scheduler.get_last_lr()[0]
-                logs['learning_rate'] = learning_rate_scalar
                 logs['loss'] = loss_scalar
                 for key, value in logs.items():
                     tb_writer.add_scalar(key, value, global_step)
@@ -511,14 +499,12 @@ def main():
                         help="Weight deay if we apply some.")
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
                         help="Epsilon for Adam optimizer.")
-    parser.add_argument("--max_grad_norm", default=1.0, type=float,
+    parser.add_argument("--max_grad_norm", default=100.0, type=float,
                         help="Max gradient norm.")
     parser.add_argument("--num_train_epochs", default=3.0, type=float,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
-    parser.add_argument("--warmup_steps", default=0, type=int,
-                        help="Linear warmup over warmup_steps.")
 
     parser.add_argument('--logging_steps', type=int, default=50,
                         help="Log every X updates steps.")
