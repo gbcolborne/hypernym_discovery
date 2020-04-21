@@ -8,7 +8,7 @@ from __future__ import absolute_import, division, print_function
 import os, argparse, logging, json, random
 import numpy as np
 import torch
-import torch.nn.functional as nnfunc
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 try:
@@ -113,7 +113,7 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
     y_probs = np.zeros((len(query_inputs), len(cand_inputs)), dtype=np.float32)
     model.eval()
     batch_start = 0
-    for batch in tqdm(dataloader, desc="Predicting"):
+    for batch in tqdm(dataloader, desc="Predicting", leave=False):
         # Encode batch of candidates
         cand_encs = encode_batch(opt, model, tokenizer, batch, grad=False, these_are_candidates=True)
         batch_size = len(cand_encs)
@@ -182,8 +182,9 @@ def predict(opt, model, tokenizer):
     return
 
 
-def compute_loss(inputs, targets):
-    return nnfunc.binary_cross_entropy(inputs, targets)
+def compute_loss(logits, targets):
+    outputs = torch.sigmoid(logits)
+    return F.binary_cross_entropy(outputs, targets)
 
 
 def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
@@ -217,8 +218,9 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     y_true = y_true.cpu().numpy()
 
     # Compute average precision scores
-    ap_scores = [] 
-    for i in range(nb_queries):
+    ap_scores = []
+    eval_iterator = trange(nb_queries, desc="Evaluating", leave=False)
+    for i in eval_iterator:
         ap = average_precision_score(y_true=y_true[i], y_score=y_probs[i])
         ap_scores.append(ap)
 
@@ -413,7 +415,7 @@ def train(opt, model, tokenizer):
                 # Log loss on training set and learning rate
                 loss_scalar = (tr_loss - logging_loss) / opt.logging_steps
                 logging_loss = tr_loss
-                learning_rate_scalar = scheduler.get_lr()[0]
+                learning_rate_scalar = scheduler.get_last_lr()[0]
                 logs['learning_rate'] = learning_rate_scalar
                 logs['loss'] = loss_scalar
                 for key, value in logs.items():
@@ -486,11 +488,11 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
 
-    parser.add_argument("--per_gpu_eval_batch_size", default=8, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=64, type=int,
                         help="Batch size (nb queries) per GPU/CPU for evaluation.")
-    parser.add_argument("--per_gpu_train_batch_size", default=8, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=64, type=int,
                         help="Batch size (nb queries) per GPU/CPU for training.")
-    parser.add_argument("--per_query_nb_examples", default=50, type=int, 
+    parser.add_argument("--per_query_nb_examples", default=64, type=int, 
                         help=("Nb candidates evaluated per query in a batch during training. "
                               "Nb negative examples is obtained by subtracting "
                               "the number of positive examples for a given query."))
