@@ -28,7 +28,6 @@ def tabulate_events(dpath):
 
 def to_csv(dpath):
     dirs = os.listdir(dpath)
-            
     d, steps = tabulate_events(dpath)
     tags, values = zip(*d.items())
     np_values = np.array(values)
