@@ -430,6 +430,7 @@ def train(opt, model, tokenizer):
                     os.makedirs(output_dir)
                 model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
                 logger.info("  Saving model checkpoint to %s", output_dir)
+                tokenizer.save_pretrained(opt.model_dir)
                 torch.save(model_to_save.state_dict(), os.path.join(output_dir, 'state_dict.pkl'))
                 torch.save(opt, os.path.join(output_dir, 'training_args.bin'))
                 rotate_checkpoints(opt.save_total_limit, opt.model_dir, checkpoint_prefix)
@@ -638,9 +639,7 @@ def main():
 
     if opt.do_eval or opt.do_pred:
         # Load tokenizer
-        tokenizer = tokenizer_class.from_pretrained(opt.tokenizer_name if opt.tokenizer_name else opt.encoder_name_or_path,
-                                                    do_lower_case=opt.do_lower_case,
-                                                    cache_dir=opt.encoder_cache_dir if opt.encoder_cache_dir else None)
+        tokenizer = tokenizer_class.from_pretrained(opt.model_dir, do_lower_case=opt.do_lower_case)
 
         # Load model
         model = BiEncoderScorer(opt, None)
