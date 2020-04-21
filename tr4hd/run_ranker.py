@@ -351,6 +351,7 @@ def train(opt, model, tokenizer):
             
             # Iterate over candidate indices, accumulate gradients
             step_iterator = trange(int(opt.per_query_nb_examples), desc="Substep", leave=False, disable=opt.local_rank not in [-1, 0])
+            step_loss = 0.0
             for substep, cand_ix in enumerate(step_iterator):
                 # Encode the <batch_size> candidates at this candidate index
                 cand_ids_sub = cand_ids[:,cand_ix]
@@ -377,7 +378,7 @@ def train(opt, model, tokenizer):
                     sub_loss.backward(retain_graph=True)
 
                 # Add loss scalar to total loss
-                tr_loss += sub_loss.item()
+                step_loss += sub_loss.item()
                 global_substep += 1
 
                 # Delete stuff to free memory 
@@ -391,6 +392,9 @@ def train(opt, model, tokenizer):
                     optimizer.step()
                     model.zero_grad()
 
+            global_step += 1
+            tr_loss += step_loss
+                    
             # Check if we update using accumulated gradients
             if not opt.update_on_substeps:
                 clip_grad(opt, model, optimizer)
@@ -399,7 +403,6 @@ def train(opt, model, tokenizer):
 
             # Update scheduler
             scheduler.step()  
-            global_step += 1
 
             # Check if we log loss and validation metrics
             if opt.local_rank in [-1, 0] and opt.logging_steps > 0 and global_step % opt.logging_steps == 0:
