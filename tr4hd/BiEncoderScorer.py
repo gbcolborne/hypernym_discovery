@@ -47,7 +47,7 @@ class BiEncoderScorer(torch.nn.Module):
         
     def score_candidates(self, query_encs, cand_encs):
         """
-        Score pairs of query and candidate encodings by taking the cosine. Return 1-D Tensor of scores.
+        Score pairs of query and candidate encodings by taking the dot product. Return 1-D Tensor of scores.
         Args:
         - query_encs: Tensor (1D ro 2D)
         - cand_encs: Tensor (1D or 2D) *Note: if both tensors are 2D, their shapes must match, as we perform a batch dot product on pairs of encodings.
@@ -75,27 +75,17 @@ class BiEncoderScorer(torch.nn.Module):
                 msg = "nb_queries and nb_cands must match if both tensors are 2D (in this case, we perform a batch dot product on pairs of encodings)"
                 raise ValueError(msg)
 
-        # Normalize
-        if nb_queries > 1:
-            query_encs_norm = query_encs / torch.norm(query_encs, p=2, dim=1, keepdim=True)            
-        else:
-            query_encs_norm = query_encs / torch.norm(query_encs, p=2)
-        if nb_cands > 1:
-            cand_encs_norm = cand_encs / torch.norm(cand_encs, p=2, dim=1, keepdim=True)
-        else:
-            cand_encs_norm = cand_encs / torch.norm(cand_encs, p=2)
-            
         # Compute dot product
         if nb_queries > 1:
             if nb_cands > 1:
-                scores = torch.bmm(query_encs_norm.unsqueeze(1), cand_encs_norm.unsqueeze(2)).squeeze(2).squeeze(1)
+                scores = torch.bmm(query_encs.unsqueeze(1), cand_encs.unsqueeze(2)).squeeze(2).squeeze(1)
             else:
-                scores = torch.matmul(cand_encs_norm, query_encs_norm.permute(1,0)).unsqueeze(0)
+                scores = torch.matmul(cand_encs, query_encs.permute(1,0)).unsqueeze(0)
         else:
             if nb_cands > 1:
-                scores = torch.matmul(query_encs_norm, cand_encs_norm.permute(1,0))
+                scores = torch.matmul(query_encs, cand_encs.permute(1,0))
             else:
-                scores = torch.matmul(query_encs_norm, cand_encs_norm.permute(1,0)).unsqueeze(0)
+                scores = torch.matmul(query_encs, cand_encs.permute(1,0)).unsqueeze(0)
         return scores
 
     def forward(self, query_inputs, cand_inputs):
