@@ -19,7 +19,7 @@ from tqdm import tqdm, trange
 from transformers import WEIGHTS_NAME 
 from transformers import BertConfig, BertModel, BertTokenizer
 from transformers import XLMConfig, XLMModel, XLMTokenizer
-from transformers import AdamW
+from transformers import Adam
 from sklearn.metrics import average_precision_score
 from data_utils import make_train_set, make_dev_set, make_test_set, make_candidate_set, load_hd_data, rotate_checkpoints, get_missing_inputs
 from BiEncoderScorer import BiEncoderScorer
@@ -288,7 +288,7 @@ def train(opt, model, tokenizer):
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': opt.weight_decay},
         {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
-    optimizer = AdamW(optimizer_grouped_parameters, lr=opt.learning_rate, eps=opt.adam_epsilon)
+    optimizer = Adam(optimizer_grouped_parameters, lr=opt.learning_rate, eps=opt.adam_epsilon)
     if opt.fp16:
         try:
             from apex import amp
