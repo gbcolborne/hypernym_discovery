@@ -488,11 +488,11 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model.")
 
-    parser.add_argument("--per_gpu_eval_batch_size", default=64, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=32, type=int,
                         help="Batch size (nb queries) per GPU/CPU for evaluation.")
     parser.add_argument("--per_gpu_train_batch_size", default=64, type=int,
                         help="Batch size (nb queries) per GPU/CPU for training.")
-    parser.add_argument("--per_query_nb_examples", default=64, type=int, 
+    parser.add_argument("--per_query_nb_examples", default=32, type=int, 
                         help=("Nb candidates evaluated per query in a batch during training. "
                               "Nb negative examples is obtained by subtracting "
                               "the number of positive examples for a given query."))
@@ -501,7 +501,7 @@ def main():
                               "for the batch of queries and updating only once"))
     parser.add_argument("--freeze_cand_encoder", action='store_true',
                         help="Freeze weights of candidate encoder during training.")
-    parser.add_argument("--learning_rate", default=5e-5, type=float,
+    parser.add_argument("--learning_rate", default=1e-3, type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--weight_decay", default=0.0, type=float,
                         help="Weight deay if we apply some.")
