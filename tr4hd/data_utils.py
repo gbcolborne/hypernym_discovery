@@ -336,7 +336,7 @@ def load_hd_data(opt, set_type):
     return data
 
             
-def rotate_checkpoints(save_total_limit, output_dir, checkpoint_prefix, use_mtime=False):
+def rotate_checkpoints(save_total_limit, output_dir, checkpoint_prefix, use_mtime=False, verbose=False):
     if not save_total_limit:
         return
     if save_total_limit <= 0:
@@ -361,5 +361,6 @@ def rotate_checkpoints(save_total_limit, output_dir, checkpoint_prefix, use_mtim
     number_of_checkpoints_to_delete = max(0, len(checkpoints_sorted) - save_total_limit)
     checkpoints_to_be_deleted = checkpoints_sorted[:number_of_checkpoints_to_delete]
     for checkpoint in checkpoints_to_be_deleted:
-        logger.info("Deleting older checkpoint [{}] due to args.save_total_limit".format(checkpoint))
+        if verbose:
+            logger.info("Deleting older checkpoint [{}] due to args.save_total_limit".format(checkpoint))
         shutil.rmtree(checkpoint)
