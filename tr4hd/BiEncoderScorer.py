@@ -14,11 +14,13 @@ class BiEncoderScorer(torch.nn.Module):
         self.encoder_c = deepcopy(pretrained_encoder)
 
         # Check if we freeze the candidate encoder
-        if opt.freeze_cand_encoder:
-            self.encoder_c.require_grad = False
-        else:
-            self.encoder_c.require_grad = True
-        self.encoder_q.requires_grad = True
+        if self.encoder_c is not None:
+            if opt.freeze_cand_encoder:
+                self.encoder_c.require_grad = False
+            else:
+                self.encoder_c.require_grad = True
+        if self.encoder_q is not None:
+            self.encoder_q.requires_grad = True
 
     def encode_candidates(self, inputs):
         """ Encode candidates.
