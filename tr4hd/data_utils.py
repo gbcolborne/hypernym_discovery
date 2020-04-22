@@ -33,7 +33,7 @@ def make_test_set(opt, tokenizer, test_data):
     return make_q_or_c_dataset(opt, tokenizer, queries, verbose=False)
 
 
-def make_train_set(opt, tokenizer, train_data, verbose=False):
+def make_train_set(opt, tokenizer, train_data, max_pos_ratio=0.5, verbose=False):
     """ Make labeled dataset for training set. Subsample candidates using negative sampling.
     Args:
     - opt:
@@ -55,9 +55,11 @@ def make_train_set(opt, tokenizer, train_data, verbose=False):
     nb_pos_discarded = 0
     for i in range(len(gold_cand_ids)):
         pos = gold_cand_ids[i]
-        if len(pos) > opt.per_query_nb_examples:
-            nb_pos_discarded += len(pos) - opt.per_query_nb_examples
-            gold_cand_ids[i] = pos[:opt.per_query_nb_examples]
+        pos_ratio = len(pos) / opt.per_query_nb_examples
+        if pos_ratio > max_pos_ratio:
+            end = int(len(pos) * max_pos_ratio) + 1
+            nb_pos_discarded += len(pos) - len(pos[:end])
+            gold_cand_ids[i] = pos[:end]
     if nb_pos_discarded > 0 and verbose:
         msg = "  {} positive hypernyms removed because the query had more than {}".format(nb_pos_discarded, opt.per_query_nb_examples)
         logger.warning(msg)
