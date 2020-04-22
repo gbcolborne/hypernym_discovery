@@ -82,13 +82,13 @@ class BiEncoderScorer(torch.nn.Module):
 
         # Normalize
         if nb_queries > 1:
+            query_encs_norm = query_encs / torch.norm(query_encs, p=2, dim=1, keepdim=True)            
+        else:
             query_encs_norm = query_encs / torch.norm(query_encs, p=2)
-        else:
-            query_encs_norm = query_encs / torch.norm(query_encs, p=2, dim=1, keepdim=True)
         if nb_cands > 1:
-            cand_encs_norm = cand_encs / torch.norm(cand_encs, p=2)
-        else:
             cand_encs_norm = cand_encs / torch.norm(cand_encs, p=2, dim=1, keepdim=True)
+        else:
+            cand_encs_norm = cand_encs / torch.norm(cand_encs, p=2)
             
         # Compute dot product
         if nb_queries > 1:
