@@ -211,7 +211,11 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
                         y_true,
                         reduction='mean')
     loss = loss.item()
-    results = {'mean_eval_loss': loss}
+    # Multiply loss by nb candidates to get mean loss per query
+    # (rather than mean loss per (query, candidate) pair). This makes
+    # it comparable to the training loss.
+    loss *= nb_candidates
+    results = {'loss': loss}
 
     # Convert tensor to numpy array
     y_true = y_true.cpu().numpy()
