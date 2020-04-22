@@ -182,8 +182,8 @@ def predict(opt, model, tokenizer):
     return
 
 
-def compute_loss(logits, targets):
-    return F.binary_cross_entropy(logits, targets)
+def compute_loss(logits, targets, reduction=None):
+    return F.binary_cross_entropy(logits, targets, reduction=reduction)
 
 
 def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
@@ -208,10 +208,10 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     
     # Compute loss
     loss = compute_loss(torch.tensor(y_probs, dtype=torch.float32, device=opt.device),
-                        y_true)
+                        y_true,
+                        reduction='mean')
     loss = loss.item()
-    loss_per_query = loss / nb_queries
-    results = {'eval_loss_per_query': loss_per_query}
+    results = {'mean_eval_loss': loss}
 
     # Convert tensor to numpy array
     y_true = y_true.cpu().numpy()
@@ -355,7 +355,7 @@ def train(opt, model, tokenizer):
 
             # Compute loss
             labels_sub = labels[:,cand_ix]
-            loss = compute_loss(scores, labels_sub)
+            loss = compute_loss(scores, labels_sub, reduction='mean')
             if opt.n_gpu > 1:
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
 
@@ -389,7 +389,7 @@ def train(opt, model, tokenizer):
 
                 # Log loss on training set and learning rate
                 loss_scalar = (training_loss - logging_loss) / opt.logging_steps
-                logs['tr_loss_per_query'] = loss_scalar / opt.train_batch_size * opt.logging_steps
+                logs['mean_tr_loss'] = loss_scalar 
                 logging_loss = training_loss
 
 
