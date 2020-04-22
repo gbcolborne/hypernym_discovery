@@ -356,6 +356,7 @@ def train(opt, model, tokenizer):
                 cand_input_ids_sub = cand_input_ids[cand_ids_sub]
                 cand_nb_tokens_sub = cand_nb_tokens[cand_ids_sub]
                 cand_batch = (cand_input_ids_sub, cand_nb_tokens_sub)
+                model.train()
                 cand_encs = encode_batch(opt, model, tokenizer, cand_batch, grad=True, these_are_candidates=True)
                 
                 # Forward pass on <batch_size> pairs of (query, candidate) encodings
