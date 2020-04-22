@@ -383,7 +383,8 @@ def train(opt, model, tokenizer):
                     model.zero_grad()
 
                 # Add loss scalar to total loss
-                step_loss += sub_loss.item()
+                sub_loss = sub_loss.item()
+                step_loss += sub_loss
                 global_substep += 1
 
             global_step += 1
