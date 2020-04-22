@@ -220,7 +220,7 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     ap_scores = []
     eval_iterator = trange(nb_queries, desc="Evaluating", leave=False)
     for i in eval_iterator:
-        print("  Spread for q[{}]: {}-{}".format(i, np.min(y_probs[i]), np.max(y_probs[i])))        
+        #logger.info("  Spread for q[{}]: {}-{}".format(i, np.min(y_probs[i]), np.max(y_probs[i])))        
         ap = average_precision_score(y_true=y_true[i], y_score=y_probs[i])
         ap_scores.append(ap)
 
@@ -316,7 +316,7 @@ def train(opt, model, tokenizer):
     logger.info("  Instantaneous batch size per GPU = %d queries", opt.per_gpu_train_batch_size)
     logger.info("  Total train batch size (w. parallel & distributed) = %d queries",
                    opt.train_batch_size * (torch.distributed.get_world_size() if opt.local_rank != -1 else 1))
-    logger.info("  Total optimization steps (one per candidate per batch of queries) = %d", total_steps)
+    logger.info("  Total optimization steps (one per batch of queries) = %d", total_steps)
     global_step = 0
     training_loss, logging_loss = 0.0, 0.0
     train_iterator = trange(int(opt.num_train_epochs), desc="Epoch", disable=opt.local_rank not in [-1, 0])
@@ -400,7 +400,7 @@ def train(opt, model, tokenizer):
                 
                 for key, value in logs.items():
                     tb_writer.add_scalar(key, value, global_step)
-                    logger.info("  " + json.dumps({**logs, **{'step': global_step}}))
+                logger.info("  " + json.dumps({**logs, **{'step': global_step}}))
                     
             # Check if we save model checkpoint
             if opt.local_rank in [-1, 0] and opt.save_steps > 0 and global_step % opt.save_steps == 0:
