@@ -20,7 +20,10 @@ class BiEncoderScorer(torch.nn.Module):
             else:
                 self.encoder_c.require_grad = True
         if self.encoder_q is not None:
-            self.encoder_q.requires_grad = True
+            if opt.freeze_query_encoder:
+                self.encoder_q.require_grad = False
+            else:
+                self.encoder_q.require_grad = True
 
     def encode_candidates(self, inputs):
         """ Encode candidates.
