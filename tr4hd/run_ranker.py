@@ -128,14 +128,14 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
 def get_top_k_candidates_and_scores(scores):
     """ Get top-k candidates and scores.
     Args:
-    - scores: list of list of scores (one list per query). 
+    - scores: numpy array of scores, shape (nb queries, nb candidates)
 
     """
 
     nb_queries = len(scores)
     top_candidates_and_scores = []
     for q in range(nb_queries):
-        y_scores = scores[q,1]
+        y_scores = scores[q,:]
         top_k_candidate_ids = np.argsort(y_scores).tolist()[-RANKING_CUTOFF:][::-1]
         tok_k_scores = [y_scores[i] for i in top_k_candidate_ids]
         top_candidates_and_scores.append(zip(top_k_candidate_ids, top_k_scores))
@@ -220,13 +220,13 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     ap_scores = []
     eval_iterator = trange(nb_queries, desc="Evaluating", leave=False)
     for i in eval_iterator:
+        print("  Spread for q[{}]: {}-{}".format(i, np.min(y_probs[i]), np.max(y_probs[i])))        
         ap = average_precision_score(y_true=y_true[i], y_score=y_probs[i])
         ap_scores.append(ap)
 
     # Compute mean average precision
     MAP = np.mean(ap_scores)
     results["MAP"] = MAP
-    print(MAP)
     return results
 
 
@@ -277,11 +277,9 @@ def train(opt, model, tokenizer):
     # Set number of epochs and steps 
     if opt.max_steps > 0:
         total_steps = opt.max_steps # One step per batch of queries
-        total_substeps = total_steps * opt.per_query_nb_examples # One substep per candidate per batch of queries
         opt.num_train_epochs = opt.max_steps // len(train_dataloader) + 1
     else:
         total_steps = opt.num_train_epochs * len(train_dataloader) 
-        total_substeps = total_steps * opt.per_query_nb_examples 
         
     # Prepare optimizer 
     no_decay = ['bias', 'LayerNorm.weight']
@@ -307,30 +305,28 @@ def train(opt, model, tokenizer):
                                                           output_device=opt.local_rank,
                                                           find_unused_parameters=True)
 
-    # Train!
+    # Train
     logger.info("***** Running training *****")
     logger.info("  Nb queries = %d", len(train_set))
     logger.info("  Nb candidates = %d", nb_candidates)
-    logger.info("  Batch size = %d queries", opt.train_batch_size)
+    logger.info("  Batch size = %d pairs", opt.train_batch_size)
     logger.info("  Nb batches = %d", len(train_dataloader))
-    logger.info("  Sub-batch size = %d candidates/query", opt.per_query_nb_examples)
+    logger.info("  Nb examples/query (k):", opt.per_query_nb_examples)
     logger.info("  Nb Epochs = %d", opt.num_train_epochs)
     logger.info("  Instantaneous batch size per GPU = %d queries", opt.per_gpu_train_batch_size)
     logger.info("  Total train batch size (w. parallel & distributed) = %d queries",
                    opt.train_batch_size * (torch.distributed.get_world_size() if opt.local_rank != -1 else 1))
-    if opt.update_on_substeps:
-        logger.info("  Total optimization steps (one per candidate per batch of queries) = %d", total_substeps)
-    else:
-        logger.info("  Total optimization steps (one per batch of queries) = %d", total_steps)
+    logger.info("  Total optimization steps (one per candidate per batch of queries) = %d", total_steps)
     global_step = 0
-    global_substep = 0
-    tr_loss, logging_loss = 0.0, 0.0
+    training_loss, logging_loss = 0.0, 0.0
     train_iterator = trange(int(opt.num_train_epochs), desc="Epoch", disable=opt.local_rank not in [-1, 0])
     set_seed(opt.seed)  
     model.zero_grad()
     for epoch in train_iterator:
-        if epoch > 0:
-            # Reload train set, so that we get new negative samples
+        # Shift the index of the candidates we evaluate
+        cand_ix = epoch % opt.per_query_nb_examples
+        # If we've evaluated all candidates, reload train set, so that we get new negative samples        
+        if cand_ix == 0 and global_step > 0:
             train_set = make_train_set(opt, tokenizer, train_data, verbose=False)
             train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
             train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
@@ -347,55 +343,38 @@ def train(opt, model, tokenizer):
             query_batch = (query_input_ids, query_nb_tokens)
             query_encs = encode_batch(opt, model, tokenizer, query_batch, grad=True, these_are_candidates=False)
             
-            # Iterate over candidate indices, accumulate gradients
-            step_iterator = trange(int(opt.per_query_nb_examples), desc="Substep", leave=False, disable=opt.local_rank not in [-1, 0])
-            step_loss = 0.0
-            for substep, cand_ix in enumerate(step_iterator):
-                # Encode the <batch_size> candidates at this candidate index
-                cand_ids_sub = cand_ids[:,cand_ix]
-                cand_input_ids_sub = cand_input_ids[cand_ids_sub]
-                cand_nb_tokens_sub = cand_nb_tokens[cand_ids_sub]
-                cand_batch = (cand_input_ids_sub, cand_nb_tokens_sub)
-                model.train()
-                cand_encs = encode_batch(opt, model, tokenizer, cand_batch, grad=True, these_are_candidates=True)
+            # Encode the <batch_size> candidates at this candidate index
+            cand_ids_sub = cand_ids[:,cand_ix]
+            cand_input_ids_sub = cand_input_ids[cand_ids_sub]
+            cand_nb_tokens_sub = cand_nb_tokens[cand_ids_sub]
+            cand_batch = (cand_input_ids_sub, cand_nb_tokens_sub)
+            cand_encs = encode_batch(opt, model, tokenizer, cand_batch, grad=True, these_are_candidates=True)
                 
-                # Forward pass on <batch_size> pairs of (query, candidate) encodings
-                scores = model({'query_encs': query_encs}, {'cand_encs':cand_encs})
-                
-                # Compute loss
-                labels_sub = labels[:,cand_ix]
-                sub_loss = compute_loss(scores, labels_sub)
-                sub_loss = sub_loss / opt.per_query_nb_examples
-                if opt.n_gpu > 1:
-                    sub_loss = sub_loss.mean() # mean() to average on multi-gpu parallel training
+            # Forward pass on <batch_size> pairs of (query, candidate) encodings
+            scores = model({'query_encs': query_encs}, {'cand_encs':cand_encs})
 
-                # Backprop
-                if opt.fp16:
-                    with amp.scale_loss(sub_loss, optimizer) as scaled_loss:
-                        scaled_loss.backward()
-                else:
-                    sub_loss.backward(retain_graph=True)
+            # Compute loss
+            labels_sub = labels[:,cand_ix]
+            loss = compute_loss(scores, labels_sub)
+            if opt.n_gpu > 1:
+                loss = loss.mean() # mean() to average on multi-gpu parallel training
 
-                # Check if we update or accumulate gradient
-                if opt.update_on_substeps:
-                    clip_grad(opt, model, optimizer)
-                    optimizer.step()
-                    model.zero_grad()
+            # Backprop
+            if opt.fp16:
+                with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                loss.backward()
 
-                # Add loss scalar to total loss
-                sub_loss = sub_loss.item()
-                step_loss += sub_loss
-                global_substep += 1
-
+            # Update
+            clip_grad(opt, model, optimizer)
+            optimizer.step()
+            model.zero_grad()
             global_step += 1
-            tr_loss += step_loss
-            logger.info("  {}".format(step_loss))
             
-            # Check if we update using accumulated gradients
-            if not opt.update_on_substeps:
-                clip_grad(opt, model, optimizer)
-                optimizer.step()
-                model.zero_grad()
+            # Add loss scalar to total loss
+            loss = loss.item()
+            training_loss += loss
 
             # Check if we log loss and validation metrics
             if opt.local_rank in [-1, 0] and opt.logging_steps > 0 and global_step % opt.logging_steps == 0:
@@ -409,12 +388,19 @@ def train(opt, model, tokenizer):
                         logs[eval_key] = value
 
                 # Log loss on training set and learning rate
-                loss_scalar = (tr_loss - logging_loss) / opt.logging_steps
-                logging_loss = tr_loss
+                loss_scalar = (training_loss - logging_loss) / opt.logging_steps
+                logging_loss = training_loss
                 logs['loss'] = loss_scalar
+
+                # Log magnitude of model weights
+                norm_w = 0.0
+                for _,param in model.named_parameters():
+                    norm_w += torch.norm(param, p=2).item()
+                logs['norm_w'] = norm_w
+                
                 for key, value in logs.items():
                     tb_writer.add_scalar(key, value, global_step)
-                    #logger.info("  " + json.dumps({**logs, **{'step': global_step}}))
+                    logger.info("  " + json.dumps({**logs, **{'step': global_step}}))
                     
             # Check if we save model checkpoint
             if opt.local_rank in [-1, 0] and opt.save_steps > 0 and global_step % opt.save_steps == 0:
@@ -440,7 +426,7 @@ def train(opt, model, tokenizer):
     if opt.local_rank in [-1, 0]:
         tb_writer.close()
 
-    return global_step, tr_loss / global_step
+    return global_step, training_loss / global_step
 
 
 def main():
@@ -491,9 +477,6 @@ def main():
                         help=("Nb candidates evaluated per query in a batch during training. "
                               "Nb negative examples is obtained by subtracting "
                               "the number of positive examples for a given query."))
-    parser.add_argument('--update_on_substeps', action='store_true',
-                        help=("Update at each sub-step during training, rather than accumulating gradients "
-                              "for the batch of queries and updating only once"))
     parser.add_argument("--freeze_query_encoder", action='store_true',
                         help="Freeze weights of query encoder during training.")
     parser.add_argument("--freeze_cand_encoder", action='store_true',
@@ -504,7 +487,7 @@ def main():
                         help="Weight deay if we apply some.")
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
                         help="Epsilon for Adam optimizer.")
-    parser.add_argument("--max_grad_norm", default=0.5, type=float,
+    parser.add_argument("--max_grad_norm", default=10.0, type=float,
                         help="Max gradient norm.")
     parser.add_argument("--num_train_epochs", default=3.0, type=float,
                         help="Total number of training epochs to perform.")
@@ -521,8 +504,6 @@ def main():
                         help="Avoid using CUDA when available")
     parser.add_argument('--overwrite_model_dir', action='store_true',
                         help="Overwrite the content of the directory containing the model")
-    parser.add_argument('--overwrite_eval_dir', action='store_true',
-                        help="Overwrite the content of the directory containing the evaluation results or predictions")
     parser.add_argument('--seed', type=int, default=91500,
                         help="random seed for initialization")
 
@@ -545,8 +526,8 @@ def main():
             raise ValueError("--encoder_name_or_path must be specified if --do_train")
     if os.path.exists(opt.model_dir) and os.listdir(opt.model_dir) and opt.do_train and not opt.overwrite_model_dir:
         raise ValueError("Model directory ({}) already exists and is not empty. Use --overwrite_model_dir to overcome.".format(opt.model_dir))
-    if os.path.exists(opt.eval_dir) and os.listdir(opt.eval_dir) and not opt.overwrite_eval_dir:
-        raise ValueError("Eval directory ({}) already exists and is not empty. Use --overwrite_eval_dir to overcome.".format(opt.eval_dir))
+    if os.path.exists(opt.eval_dir) and os.listdir(opt.eval_dir):
+        raise ValueError("Eval directory ({}) already exists and is not empty.".format(opt.eval_dir))
     opt.max_length = opt.max_seq_length
     if opt.encoder_type == 'xlm':
         opt.max_position_embeddings = opt.max_seq_length
