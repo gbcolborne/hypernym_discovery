@@ -91,7 +91,7 @@ class BiEncoderScorer(torch.nn.Module):
                 scores = torch.matmul(query_encs, cand_encs.permute(1,0))
             else:
                 scores = torch.matmul(query_encs, cand_encs.permute(1,0)).unsqueeze(0)
-        return scores
+        return torch.sigmoid(scores)
 
     def forward(self, query_inputs, cand_inputs):
         """ Forward pass from encodings to scores.

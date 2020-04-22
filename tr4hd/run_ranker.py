@@ -183,7 +183,7 @@ def predict(opt, model, tokenizer):
 
 
 def compute_loss(logits, targets):
-    return F.binary_cross_entropy_with_logits(logits, targets)
+    return F.binary_cross_entropy(logits, targets)
 
 
 def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
