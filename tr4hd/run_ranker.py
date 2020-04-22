@@ -211,7 +211,7 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
                         y_true)
     loss = loss.item()
     loss_per_query = loss / nb_queries
-    results = {'loss_per_query': loss_per_query}
+    results = {'eval_loss_per_query': loss_per_query}
 
     # Convert tensor to numpy array
     y_true = y_true.cpu().numpy()
@@ -389,12 +389,13 @@ def train(opt, model, tokenizer):
 
                 # Log loss on training set and learning rate
                 loss_scalar = (training_loss - logging_loss) / opt.logging_steps
+                logs['tr_loss_per_query'] = loss_scalar / opt.train_batch_size * opt.logging_steps
                 logging_loss = training_loss
-                logs['loss'] = loss_scalar
+
 
                 # Log magnitude of model weights
                 norm_w = 0.0
-                for _,param in model.named_parameters():
+q                for _,param in model.named_parameters():
                     norm_w += torch.norm(param, p=2).item()
                 logs['norm_w'] = norm_w
                 
