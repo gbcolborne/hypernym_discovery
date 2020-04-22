@@ -311,7 +311,7 @@ def train(opt, model, tokenizer):
     logger.info("  Nb candidates = %d", nb_candidates)
     logger.info("  Batch size = %d pairs", opt.train_batch_size)
     logger.info("  Nb batches = %d", len(train_dataloader))
-    logger.info("  Nb examples/query (k):", opt.per_query_nb_examples)
+    logger.info("  Nb examples/query (k): {}".format(opt.per_query_nb_examples))
     logger.info("  Nb Epochs = %d", opt.num_train_epochs)
     logger.info("  Instantaneous batch size per GPU = %d queries", opt.per_gpu_train_batch_size)
     logger.info("  Total train batch size (w. parallel & distributed) = %d queries",
