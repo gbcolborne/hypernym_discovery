@@ -19,7 +19,7 @@ from tqdm import tqdm, trange
 from transformers import WEIGHTS_NAME 
 from transformers import BertConfig, BertModel, BertTokenizer
 from transformers import XLMConfig, XLMModel, XLMTokenizer
-from transformers import Adam
+from transformers import AdamW
 from sklearn.metrics import average_precision_score
 from data_utils import make_train_set, make_dev_set, make_test_set, make_candidate_set, load_hd_data, rotate_checkpoints, get_missing_inputs
 from BiEncoderScorer import BiEncoderScorer
@@ -226,6 +226,7 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     # Compute mean average precision
     MAP = np.mean(ap_scores)
     results["MAP"] = MAP
+    print(MAP)
     return results
 
 
@@ -288,7 +289,7 @@ def train(opt, model, tokenizer):
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': opt.weight_decay},
         {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
         ]
-    optimizer = Adam(optimizer_grouped_parameters, lr=opt.learning_rate, eps=opt.adam_epsilon)
+    optimizer = AdamW(optimizer_grouped_parameters, lr=opt.learning_rate, eps=opt.adam_epsilon)
     if opt.fp16:
         try:
             from apex import amp
@@ -478,7 +479,7 @@ def main():
     parser.add_argument("--evaluate_during_training", action='store_true',
                         help="Run evaluation on dev set during training at each logging step.")
     parser.add_argument("--do_lower_case", action='store_true',
-                        help="Set this flag if you are using an uncased model.")
+                        help="Set this flag if you are using an uncased model (warning: may also remove accents).")
 
     parser.add_argument("--per_gpu_eval_batch_size", default=32, type=int,
                         help="Batch size (nb queries) per GPU/CPU for evaluation.")
@@ -491,6 +492,8 @@ def main():
     parser.add_argument('--update_on_substeps', action='store_true',
                         help=("Update at each sub-step during training, rather than accumulating gradients "
                               "for the batch of queries and updating only once"))
+    parser.add_argument("--freeze_query_encoder", action='store_true',
+                        help="Freeze weights of query encoder during training.")
     parser.add_argument("--freeze_cand_encoder", action='store_true',
                         help="Freeze weights of candidate encoder during training.")
     parser.add_argument("--learning_rate", default=1e-3, type=float,
@@ -499,7 +502,7 @@ def main():
                         help="Weight deay if we apply some.")
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
                         help="Epsilon for Adam optimizer.")
-    parser.add_argument("--max_grad_norm", default=100.0, type=float,
+    parser.add_argument("--max_grad_norm", default=0.5, type=float,
                         help="Max gradient norm.")
     parser.add_argument("--num_train_epochs", default=3.0, type=float,
                         help="Total number of training epochs to perform.")
