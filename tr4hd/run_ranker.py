@@ -209,9 +209,9 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     # Compute loss
     loss = compute_loss(torch.tensor(y_probs, dtype=torch.float32, device=opt.device),
                         y_true)
-    total_loss = loss.item()
-    avg_loss = total_loss / (nb_queries * nb_candidates)
-    results = {'avg_loss': avg_loss}
+    loss = loss.item()
+    loss_per_query = loss / nb_queries
+    results = {'loss_per_query': loss_per_query}
 
     # Convert tensor to numpy array
     y_true = y_true.cpu().numpy()
