@@ -393,9 +393,8 @@ def train(opt, model, tokenizer):
 
                 # Log loss on training set and learning rate
                 loss_scalar = (training_loss - logging_loss) / opt.logging_steps
-                logs['mean_tr_loss'] = loss_scalar 
+                logs['train_loss'] = loss_scalar 
                 logging_loss = training_loss
-
 
                 # Log magnitude of model weights
                 norm_w = 0.0
