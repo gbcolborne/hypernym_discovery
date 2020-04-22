@@ -395,7 +395,7 @@ def train(opt, model, tokenizer):
 
                 # Log magnitude of model weights
                 norm_w = 0.0
-q                for _,param in model.named_parameters():
+                for _,param in model.named_parameters():
                     norm_w += torch.norm(param, p=2).item()
                 logs['norm_w'] = norm_w
                 
