@@ -27,7 +27,12 @@ class BiEncoderScorer(torch.nn.Module):
         self.hidden_dim = self.encoder_q.config.emb_dim
         self.output_q = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
         self.output_c = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
-        
+        # Initialize weights properly (Xavier init)
+        self.output_q.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
+        self.output_c.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
+        #self.output_q.weight.data = self.output_q.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
+        #self.output_c.weight.data = self.output_c.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
+
     def encode_candidates(self, inputs):
         """ Encode candidates.
         Args:
@@ -40,6 +45,8 @@ class BiEncoderScorer(torch.nn.Module):
         encs = encs[:,0,:] # Keep only the hidden state of BOS
         # Apply linear layer
         out = self.output_c(encs)
+        # ReLU
+        out = out.clamp_min(0.)
         return out
 
     def encode_queries(self, inputs):
@@ -54,6 +61,8 @@ class BiEncoderScorer(torch.nn.Module):
         encs = encs[:,0,:] # Keep only the hidden state of BOS        
         # Apply linear layer
         out = self.output_q(encs)
+        # ReLU
+        out = out.clamp_min(0.)
         return out
 
         
