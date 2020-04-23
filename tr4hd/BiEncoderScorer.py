@@ -1,5 +1,6 @@
 """ Bi-encoder scoring module. """
 
+import math
 from copy import deepcopy
 import torch
 
