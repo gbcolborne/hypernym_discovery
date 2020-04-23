@@ -22,9 +22,11 @@ class BiEncoderScorer(torch.nn.Module):
             self.encoder_q.require_grad = False
         else:
             self.encoder_q.require_grad = True
-        hidden_dim = opt.encoder_q.emb_dim
-        self.output_q = torch.nn.Linear((hidden_dim, hidden_dim))
-        self.output_c = torch.nn.Linear((hidden_dim, hidden_dim))
+
+        # Linear layer after encoding
+        self.hidden_dim = self.encoder_q.config.emb_dim
+        self.output_q = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
+        self.output_c = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
         
     def encode_candidates(self, inputs):
         """ Encode candidates.
@@ -32,11 +34,13 @@ class BiEncoderScorer(torch.nn.Module):
         - inputs: dict containing input_ids, attention_mask, token_type_ids, langs
 
         """
-
-        outputs = self.output_c(self.encoder_c(**inputs))
+        
+        outputs = self.encoder_c(**inputs)
         encs = outputs[0] # The last hidden states are the first element of the tuple
         encs = encs[:,0,:] # Keep only the hidden state of BOS
-        return encs
+        # Apply linear layer
+        out = self.output_c(encs)
+        return out
 
     def encode_queries(self, inputs):
         """ Encode queries.
@@ -45,10 +49,13 @@ class BiEncoderScorer(torch.nn.Module):
 
         """
 
-        outputs = self.output_q(self.encoder_q(**inputs))
+        outputs = self.encoder_q(**inputs)
         encs = outputs[0] # The last hidden states are the first element of the tuple
         encs = encs[:,0,:] # Keep only the hidden state of BOS        
-        return encs
+        # Apply linear layer
+        out = self.output_q(encs)
+        return out
+
         
         
     def score_candidates(self, query_encs, cand_encs):
