@@ -14,16 +14,17 @@ class BiEncoderScorer(torch.nn.Module):
         self.encoder_c = deepcopy(pretrained_encoder)
 
         # Check if we freeze the candidate encoder
-        if self.encoder_c is not None:
-            if opt.freeze_cand_encoder:
-                self.encoder_c.require_grad = False
-            else:
-                self.encoder_c.require_grad = True
-        if self.encoder_q is not None:
-            if opt.freeze_query_encoder:
-                self.encoder_q.require_grad = False
-            else:
-                self.encoder_q.require_grad = True
+        if opt.freeze_cand_encoder:
+            self.encoder_c.require_grad = False
+        else:
+            self.encoder_c.require_grad = True
+        if opt.freeze_query_encoder:
+            self.encoder_q.require_grad = False
+        else:
+            self.encoder_q.require_grad = True
+        hidden_dim = opt.encoder_q.emb_dim
+        self.output_q = torch.nn.Linear((hidden_dim, hidden_dim))
+        self.output_c = torch.nn.Linear((hidden_dim, hidden_dim))
         
     def encode_candidates(self, inputs):
         """ Encode candidates.
@@ -32,7 +33,7 @@ class BiEncoderScorer(torch.nn.Module):
 
         """
 
-        outputs = self.encoder_c(**inputs)
+        outputs = self.output_c(self.encoder_c(**inputs))
         encs = outputs[0] # The last hidden states are the first element of the tuple
         encs = encs[:,0,:] # Keep only the hidden state of BOS
         return encs
@@ -44,7 +45,7 @@ class BiEncoderScorer(torch.nn.Module):
 
         """
 
-        outputs = self.encoder_q(**inputs)
+        outputs = self.output_q(self.encoder_q(**inputs))
         encs = outputs[0] # The last hidden states are the first element of the tuple
         encs = encs[:,0,:] # Keep only the hidden state of BOS        
         return encs
