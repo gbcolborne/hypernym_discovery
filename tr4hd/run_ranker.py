@@ -373,7 +373,8 @@ def train(opt, model, tokenizer):
             # Check norm of grad before clipping
             norm_w_grad = 0.0
             for _,param in model.named_parameters():
-                norm_w_grad += torch.norm(param.weight.grad, p=2).item()
+                if param.grad is not None:
+                    norm_w_grad += torch.norm(param.grad, p=2).item()
                 
             # Update
             clip_grad(opt, model, optimizer)
@@ -404,7 +405,7 @@ def train(opt, model, tokenizer):
                 # Log magnitude of model weights
                 norm_w = 0.0
                 for _,param in model.named_parameters():
-                    norm_w += torch.norm(param.weight, p=2).item()
+                    norm_w += torch.norm(param.data, p=2).item()
                 logs['norm_w'] = norm_w
                 logs['norm_w_grad'] = norm_w_grad
                 
