@@ -201,8 +201,7 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs, dev_queries, candida
 
     # Get model predictions
     y_probs = get_model_predictions(opt, model, tokenizer, eval_data, cand_inputs)
-
-    logging.info("  Range(y_probs): {}-{}".format(np.min(y_probs), np.max(y_probs)))
+    logging.info("  Range(y_probs): {:.3f}-{:.3f}".format(np.min(y_probs), np.max(y_probs)))
     
     # Get labels
     y_true = eval_data.tensors[3].to(device=opt.device)
@@ -228,7 +227,7 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs, dev_queries, candida
         if i < 5:
             logger.debug("  ")
             logger.debug("  Query: {}".format(dev_queries[i]))
-            logger.debug("  Range of scores: {}-{}".format(i, np.min(y_probs[i]), np.max(y_probs[i])))        
+            logger.debug("  Range of scores: {}-{}".format(np.min(y_probs[i]), np.max(y_probs[i])))        
             # Get top 15 candidates
             top_k_candidate_ids = np.argsort(y_probs[i]).tolist()[-RANKING_CUTOFF:][::-1]
             top_k_candidates = [candidates[c] for c in top_k_candidate_ids]
