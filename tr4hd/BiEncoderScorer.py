@@ -115,14 +115,14 @@ class BiEncoderScorer(torch.nn.Module):
         # Compute dot product
         if nb_queries > 1:
             if nb_cands > 1:
-                scores = torch.bmm(query_encs_norm.unsqueeze(1), cand_encs_norm.unsqueeze(2)).squeeze(2).squeeze(1)
+                scores = torch.bmm(query_encs.unsqueeze(1), cand_encs.unsqueeze(2)).squeeze(2).squeeze(1)
             else:
-                scores = torch.matmul(cand_encs_norm, query_encs_norm.permute(1,0)).unsqueeze(0)
+                scores = torch.matmul(cand_encs, query_encs.permute(1,0)).unsqueeze(0)
         else:
             if nb_cands > 1:
-                scores = torch.matmul(query_encs_norm, cand_encs_norm.permute(1,0))
+                scores = torch.matmul(query_encs, cand_encs.permute(1,0))
             else:
-                scores = torch.matmul(query_encs_norm, cand_encs_norm.permute(1,0)).unsqueeze(0)
+                scores = torch.matmul(query_encs, cand_encs.permute(1,0)).unsqueeze(0)
 
         # Clip to min=0 (i.e. ReLU)
         #scores = torch.clamp(scores, min=0)
