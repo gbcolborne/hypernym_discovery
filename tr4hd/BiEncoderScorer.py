@@ -13,7 +13,7 @@ class BiEncoderScorer(torch.nn.Module):
         # Make 2 copies of the pretrained model
         self.encoder_q = deepcopy(pretrained_encoder)
         self.encoder_c = deepcopy(pretrained_encoder)
-
+        
         # Check if we freeze the candidate encoder
         if opt.freeze_cand_encoder:
             self.encoder_c.require_grad = False
@@ -34,6 +34,8 @@ class BiEncoderScorer(torch.nn.Module):
         #self.output_q.weight.data = self.output_q.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
         #self.output_c.weight.data = self.output_c.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
 
+        self.normalize_embeddings = False
+        
     def encode_candidates(self, inputs):
         """ Encode candidates.
         Args:
@@ -99,14 +101,15 @@ class BiEncoderScorer(torch.nn.Module):
                 raise ValueError(msg)
 
         # Normalize
-        if nb_queries > 1:
-            query_encs_norm = query_encs / torch.norm(query_encs, p=2, dim=1, keepdim=True)            
-        else:
-            query_encs_norm = query_encs / torch.norm(query_encs, p=2)
-        if nb_cands > 1:
-            cand_encs_norm = cand_encs / torch.norm(cand_encs, p=2, dim=1, keepdim=True)
-        else:
-            cand_encs_norm = cand_encs / torch.norm(cand_encs, p=2)
+        if self.normalize_embeddings:
+            if nb_queries > 1:
+                query_encs = query_encs / torch.norm(query_encs, p=2, dim=1, keepdim=True)            
+            else:
+                query_encs = query_encs / torch.norm(query_encs, p=2)
+            if nb_cands > 1:
+                cand_encs = cand_encs / torch.norm(cand_encs, p=2, dim=1, keepdim=True)
+            else:
+                cand_encs = cand_encs / torch.norm(cand_encs, p=2)
             
         # Compute dot product
         if nb_queries > 1:
