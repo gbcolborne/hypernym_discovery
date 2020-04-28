@@ -31,8 +31,10 @@ class BiEncoderScorer(torch.nn.Module):
         # Initialize weights properly (Xavier init)
         self.output_q.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
         self.output_c.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
-        #self.output_q.weight.data = self.output_q.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
-        #self.output_c.weight.data = self.output_c.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
+
+        if opt.add_eye_to_init:
+            self.output_q.weight.data = self.output_q.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
+            self.output_c.weight.data = self.output_c.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
 
         self.normalize_embeddings = False
         
@@ -123,8 +125,8 @@ class BiEncoderScorer(torch.nn.Module):
             else:
                 scores = torch.matmul(query_encs_norm, cand_encs_norm.permute(1,0)).unsqueeze(0)
 
-        # Clip to min=0
-        scores = torch.clamp(scores, min=0)
+        # Clip to min=0 (i.e. ReLU)
+        #scores = torch.clamp(scores, min=0)
         return scores
 
     def forward(self, query_inputs, cand_inputs):
