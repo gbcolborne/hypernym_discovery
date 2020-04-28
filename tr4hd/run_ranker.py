@@ -110,7 +110,7 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
     sampler = SequentialSampler(cand_inputs) 
     dataloader = DataLoader(cand_inputs, sampler=sampler, batch_size=opt.eval_batch_size)
     
-    y_probs = [list() * len(query_encs)]
+    y_probs = [list() for _ in range(len(query_encs))]
     model.eval()
     batch_start = 0
     for batch in tqdm(dataloader, desc="Predicting", leave=False):
@@ -186,7 +186,7 @@ def compute_loss(logits, targets, reduction=None):
     return F.binary_cross_entropy(logits, targets, reduction=reduction)
 
 
-def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
+def evaluate(opt, model, tokenizer, eval_data, cand_inputs, dev_queries, candidates):
     """ Evaluate model on labeled dataset (without grad). Return dictionary containing average loss and evaluation metrics.
     Args:
     - opt
@@ -196,7 +196,6 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     - cand_inputs TensorDataset containing: input_ids, nb_tokens.
 
     """
-
     nb_queries = len(eval_data)
     nb_candidates = len(cand_inputs)
 
@@ -228,16 +227,19 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
         # Test
         if i < 5:
             logger.debug("  ")
-            logger.debug("  Query: {}".format(dev_data["queries"][i]))
+            logger.debug("  Query: {}".format(dev_queries[i]))
             logger.debug("  Range of scores: {}-{}".format(i, np.min(y_probs[i]), np.max(y_probs[i])))        
             # Get top 15 candidates
             top_k_candidate_ids = np.argsort(y_probs[i]).tolist()[-RANKING_CUTOFF:][::-1]
-            top_k_candidates = [dev_data["candidates"][c] for c in top_k_candidate_ids]
+            top_k_candidates = [candidates[c] for c in top_k_candidate_ids]
             top_k_scores = [y_probs[i][c] for c in top_k_candidate_ids]
+            
             logger.debug("  Top 15 candidate IDs: {}".format(", ".join(str(x) for x in top_k_candidate_ids)))
+            logger.debug("  Top 15 candidates: {}".format(", ".join(top_k_candidates)))
             logger.debug("  Top 15 scores: {}".format(", ".join("{:.3f}".format(x) for x in top_k_scores)))
             logger.debug("  Nb gold hypernyms: {}".format(np.sum(y_true[i])))
-            logger.debug("  Gold hypernyms: {}".format([i for i,x in enumerate(y_true[i]) if x == 1]))
+            logger.debug("  Gold hypernym IDs: {}".format([i for i,x in enumerate(y_true[i]) if x == 1]))
+            logger.debug("  Gold hypernyms: {}".format([candidates[i] for i,x in enumerate(y_true[i]) if x == 1]))
             logger.debug("  Average precision: {:.5f}".format(ap))
             
     # Compute mean average precision
@@ -404,7 +406,7 @@ def train(opt, model, tokenizer):
 
                 # Check if we validate on dev set
                 if opt.local_rank == -1 and opt.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
-                    results = evaluate(opt, model, tokenizer, dev_set, cand_inputs)
+                    results = evaluate(opt, model, tokenizer, dev_set, cand_inputs, dev_data["queries"], dev_data["candidates"])
                     for key, value in results.items():
                         eval_key = 'eval_{}'.format(key)
                         logs[eval_key] = value
