@@ -125,7 +125,7 @@ class BiEncoderScorer(torch.nn.Module):
                 scores = torch.matmul(query_encs, cand_encs.permute(1,0)).unsqueeze(0)
 
         # Clip to min=0 (i.e. ReLU)
-        #scores = torch.clamp(scores, min=0)
+        scores = scores.clamp_min(0.0)
         return scores
 
     def forward(self, query_inputs, cand_inputs):
