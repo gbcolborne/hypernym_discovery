@@ -110,7 +110,7 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
     sampler = SequentialSampler(cand_inputs) 
     dataloader = DataLoader(cand_inputs, sampler=sampler, batch_size=opt.eval_batch_size)
     
-    y_probs = np.zeros((len(query_inputs), len(cand_inputs)), dtype=np.float32)
+    y_probs = [list() * len(query_encs)]
     model.eval()
     batch_start = 0
     for batch in tqdm(dataloader, desc="Predicting", leave=False):
@@ -121,8 +121,8 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
             with torch.no_grad():
                 scores = model({'query_encs': query_encs[query_ix]}, {'cand_encs':cand_encs})
             scores = scores.detach().cpu().numpy()
-            y_probs[query_ix, batch_start:batch_start+batch_size] = scores
-    return y_probs
+            y_probs[query_ix] += scores.tolist()
+    return np.asarray(y_probs, dtype=np.float32)
 
 
 def get_top_k_candidates_and_scores(scores):
@@ -137,7 +137,7 @@ def get_top_k_candidates_and_scores(scores):
     for q in range(nb_queries):
         y_scores = scores[q,:]
         top_k_candidate_ids = np.argsort(y_scores).tolist()[-RANKING_CUTOFF:][::-1]
-        tok_k_scores = [y_scores[i] for i in top_k_candidate_ids]
+        top_k_scores = [y_scores[i] for i in top_k_candidate_ids]
         top_candidates_and_scores.append(zip(top_k_candidate_ids, top_k_scores))
     return top_candidates_and_scores
 
@@ -228,11 +228,13 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
         # Test
         if i < 5:
             logger.debug("  ")
-            logger.debug("  Range for q[{}]: {}-{}".format(i, np.min(y_probs[i]), np.max(y_probs[i])))        
+            logger.debug("  Query: {}".format(dev_data["queries"][i]))
+            logger.debug("  Range of scores: {}-{}".format(i, np.min(y_probs[i]), np.max(y_probs[i])))        
             # Get top 15 candidates
             top_k_candidate_ids = np.argsort(y_probs[i]).tolist()[-RANKING_CUTOFF:][::-1]
-            tok_k_scores = [y_probs[i][c] for c in top_k_candidate_ids]
-            logger.debug("  Top 15 candidate IDs: {}".format(", ".join(top_k_candidate_ids)))
+            top_k_candidates = [dev_data["candidates"][c] for c in top_k_candidate_ids]
+            top_k_scores = [y_probs[i][c] for c in top_k_candidate_ids]
+            logger.debug("  Top 15 candidate IDs: {}".format(", ".join(str(x) for x in top_k_candidate_ids)))
             logger.debug("  Top 15 scores: {}".format(", ".join("{:.3f}".format(x) for x in top_k_scores)))
             logger.debug("  Nb gold hypernyms: {}".format(np.sum(y_true[i])))
             logger.debug("  Gold hypernyms: {}".format([i for i,x in enumerate(y_true[i]) if x == 1]))
