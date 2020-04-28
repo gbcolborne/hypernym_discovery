@@ -202,6 +202,8 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
 
     # Get model predictions
     y_probs = get_model_predictions(opt, model, tokenizer, eval_data, cand_inputs)
+
+    logging.info("  Range(y_probs): {}-{}".format(np.min(y_probs), np.max(y_probs)))
     
     # Get labels
     y_true = eval_data.tensors[3].to(device=opt.device)
@@ -211,10 +213,6 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
                         y_true,
                         reduction='mean')
     loss = loss.item()
-    # Multiply loss by nb candidates to get mean loss per query
-    # (rather than mean loss per (query, candidate) pair). This makes
-    # it comparable to the training loss.
-    loss *= nb_candidates
     results = {'loss': loss}
 
     # Convert tensor to numpy array
@@ -224,10 +222,22 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     ap_scores = []
     eval_iterator = trange(nb_queries, desc="Evaluating", leave=False)
     for i in eval_iterator:
-        #logger.info("  Spread for q[{}]: {}-{}".format(i, np.min(y_probs[i]), np.max(y_probs[i])))        
         ap = average_precision_score(y_true=y_true[i], y_score=y_probs[i])
         ap_scores.append(ap)
 
+        # Test
+        if i < 5:
+            logger.debug("  ")
+            logger.debug("  Range for q[{}]: {}-{}".format(i, np.min(y_probs[i]), np.max(y_probs[i])))        
+            # Get top 15 candidates
+            top_k_candidate_ids = np.argsort(y_probs[i]).tolist()[-RANKING_CUTOFF:][::-1]
+            tok_k_scores = [y_probs[i][c] for c in top_k_candidate_ids]
+            logger.debug("  Top 15 candidate IDs: {}".format(", ".join(top_k_candidate_ids)))
+            logger.debug("  Top 15 scores: {}".format(", ".join("{:.3f}".format(x) for x in top_k_scores)))
+            logger.debug("  Nb gold hypernyms: {}".format(np.sum(y_true[i])))
+            logger.debug("  Gold hypernyms: {}".format([i for i,x in enumerate(y_true[i]) if x == 1]))
+            logger.debug("  Average precision: {:.5f}".format(ap))
+            
     # Compute mean average precision
     MAP = np.mean(ap_scores)
     results["MAP"] = MAP
@@ -492,6 +502,8 @@ def main():
                         help="Freeze weights of query encoder during training.")
     parser.add_argument("--freeze_cand_encoder", action='store_true',
                         help="Freeze weights of candidate encoder during training.")
+    parser.add_argument("--add_eye_to_init", action='store_true',
+                        help="Add identity matrix to initial weights of projection layers.")
     parser.add_argument("--learning_rate", default=1e-3, type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--weight_decay", default=0.0, type=float,
@@ -563,9 +575,18 @@ def main():
     opt.device = device
 
     # Setup logging
+    DEBUG = True
+    level = None
+    if opt.local_rank in [-1, 0]:
+        if DEBUG:
+            level = logging.DEBUG
+        else:
+            level = logging.INFO 
+    else:
+        level = logging.WARN
     logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                         datefmt = '%m/%d/%Y %H:%M:%S',
-                        level = logging.INFO if opt.local_rank in [-1, 0] else logging.WARN)
+                        level = level)
     logger.warning("  Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
                     opt.local_rank, device, opt.n_gpu, bool(opt.local_rank != -1), opt.fp16)
 
