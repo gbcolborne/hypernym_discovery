@@ -35,7 +35,6 @@ class BiEncoderScorer(torch.nn.Module):
         if opt.add_eye_to_init:
             self.output_q.weight.data = self.output_q.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
             self.output_c.weight.data = self.output_c.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
-
         self.normalize_embeddings = False
         
     def encode_candidates(self, inputs):
