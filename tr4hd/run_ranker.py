@@ -578,7 +578,7 @@ def main():
     opt.device = device
 
     # Setup logging
-    DEBUG = True
+    DEBUG = False
     level = None
     if opt.local_rank in [-1, 0]:
         if DEBUG:
