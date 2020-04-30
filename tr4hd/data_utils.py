@@ -41,7 +41,10 @@ def make_train_set(opt, tokenizer, train_data, max_pos_ratio=0.5, verbose=False)
     - train_data: dict containing queries (list), candidates (list), and gold_hypernym_candidate_ids (list of lists, one per query)
 
     """
-
+    if max_pos_ratio <=0 or max_pos_ratio > 1:
+        msg = "max_pos_ratio must be in (0,1]"
+        raise ValueError(msg)
+    
     # Load training data
     queries = train_data["queries"]
     candidates = train_data["candidates"]
@@ -58,8 +61,9 @@ def make_train_set(opt, tokenizer, train_data, max_pos_ratio=0.5, verbose=False)
         pos_ratio = len(pos) / opt.per_query_nb_examples
         if pos_ratio > max_pos_ratio:
             end = int(len(pos) * max_pos_ratio) + 1
-            nb_pos_discarded += len(pos) - len(pos[:end])
-            gold_cand_ids[i] = pos[:end]
+            kept = pos[:end]
+            nb_pos_discarded += len(pos) - len(kept)
+            gold_cand_ids[i] = kept
     if nb_pos_discarded > 0 and verbose:
         msg = "  {} positive hypernyms removed because the query had more than {}".format(nb_pos_discarded, opt.per_query_nb_examples)
         logger.warning(msg)

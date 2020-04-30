@@ -287,7 +287,7 @@ def train(opt, model, tokenizer):
     opt.train_batch_size = opt.per_gpu_train_batch_size * max(1, opt.n_gpu)
 
     # Make training set
-    train_set = make_train_set(opt, tokenizer, train_data, verbose=True)
+    train_set = make_train_set(opt, tokenizer, train_data, max_pos_ratio=opt.max_pos_ratio, verbose=True)
     train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
     train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
 
@@ -344,7 +344,7 @@ def train(opt, model, tokenizer):
         cand_ix = epoch % opt.per_query_nb_examples
         # If we've evaluated all candidates, reload train set, so that we get new negative samples        
         if cand_ix == 0 and global_step > 0:
-            train_set = make_train_set(opt, tokenizer, train_data, verbose=False)
+            train_set = make_train_set(opt, tokenizer, train_data, max_pos_ratio=opt.max_pos_ratio, verbose=False)
             train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
             train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
         epoch_iterator = tqdm(train_dataloader, desc="Step (batch)", leave=False, disable=opt.local_rank not in [-1, 0])
@@ -501,6 +501,8 @@ def main():
                         help=("Nb candidates evaluated per query in a batch during training. "
                               "Nb negative examples is obtained by subtracting "
                               "the number of positive examples for a given query."))
+    parser.add_argument("--max_pos_ratio", type=float, default=0.5,
+                        help="Maximum ratio of positive examples per query")
     parser.add_argument("--freeze_query_encoder", action='store_true',
                         help="Freeze weights of query encoder during training.")
     parser.add_argument("--freeze_cand_encoder", action='store_true',
