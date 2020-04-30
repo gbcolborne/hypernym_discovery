@@ -12,8 +12,9 @@ class BiEncoderScorer(torch.nn.Module):
         self.normalize_encodings = True
         
         # Make 2 copies of the pretrained model
-        self.encoder_q = deepcopy(pretrained_encoder)
-        self.encoder_c = deepcopy(pretrained_encoder)
+        if pretrained_encoder is not None:
+            self.encoder_q = deepcopy(pretrained_encoder)
+            self.encoder_c = deepcopy(pretrained_encoder)
         
         # Check if we freeze the candidate encoder
         if opt.freeze_cand_encoder:
@@ -79,7 +80,7 @@ class BiEncoderScorer(torch.nn.Module):
             out = out.clamp_min(0.)
             return out
         else:
-            returnc encs
+            return encs
 
         
         
