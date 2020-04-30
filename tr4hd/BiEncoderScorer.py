@@ -9,7 +9,8 @@ class BiEncoderScorer(torch.nn.Module):
 
     def __init__(self, opt, pretrained_encoder):
         super(BiEncoderScorer, self).__init__()
-
+        self.normalize_encodings = True
+        
         # Make 2 copies of the pretrained model
         self.encoder_q = deepcopy(pretrained_encoder)
         self.encoder_c = deepcopy(pretrained_encoder)
@@ -24,18 +25,23 @@ class BiEncoderScorer(torch.nn.Module):
         else:
             self.encoder_q.require_grad = True
 
-        # Linear layer after encoding
-        self.hidden_dim = self.encoder_q.config.emb_dim
-        self.output_q = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
-        self.output_c = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
-        # Initialize weights properly (Xavier init)
-        self.output_q.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
-        self.output_c.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
+        # Check if we project encodings
+        if opt.project_encodings:
+            self.project_encodings = True
+        else:
+            self.project_encodings = False
+        if self.project_encodings:
+            # Linear layer after encoding
+            self.hidden_dim = self.encoder_q.config.emb_dim
+            self.output_q = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
+            self.output_c = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
+            # Initialize weights properly (Xavier init)
+            self.output_q.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
+            self.output_c.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
+            if opt.add_eye_to_init:
+                self.output_q.weight.data = self.output_q.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
+                self.output_c.weight.data = self.output_c.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
 
-        if opt.add_eye_to_init:
-            self.output_q.weight.data = self.output_q.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
-            self.output_c.weight.data = self.output_c.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
-        self.normalize_embeddings = True
         
     def encode_candidates(self, inputs):
         """ Encode candidates.
@@ -47,11 +53,14 @@ class BiEncoderScorer(torch.nn.Module):
         outputs = self.encoder_c(**inputs)
         encs = outputs[0] # The last hidden states are the first element of the tuple
         encs = encs[:,0,:] # Keep only the hidden state of BOS
-        # Apply linear layer
-        out = self.output_c(encs)
-        # ReLU
-        out = out.clamp_min(0.)
-        return out
+        if self.project_encodings:
+            # Apply linear layer
+            out = self.output_c(encs)
+            # ReLU
+            out = out.clamp_min(0.)
+            return out
+        else:
+            return encs
 
     def encode_queries(self, inputs):
         """ Encode queries.
@@ -62,12 +71,15 @@ class BiEncoderScorer(torch.nn.Module):
 
         outputs = self.encoder_q(**inputs)
         encs = outputs[0] # The last hidden states are the first element of the tuple
-        encs = encs[:,0,:] # Keep only the hidden state of BOS        
-        # Apply linear layer
-        out = self.output_q(encs)
-        # ReLU
-        out = out.clamp_min(0.)
-        return out
+        encs = encs[:,0,:] # Keep only the hidden state of BOS
+        if self.project_encodings:
+            # Apply linear layer
+            out = self.output_q(encs)
+            # ReLU
+            out = out.clamp_min(0.)
+            return out
+        else:
+            returnc encs
 
         
         
@@ -102,7 +114,7 @@ class BiEncoderScorer(torch.nn.Module):
                 raise ValueError(msg)
 
         # Normalize
-        if self.normalize_embeddings:
+        if self.normalize_encodings:
             if nb_queries > 1:
                 query_encs = query_encs / torch.norm(query_encs, p=2, dim=1, keepdim=True)            
             else:

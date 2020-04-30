@@ -505,6 +505,8 @@ def main():
                         help="Freeze weights of query encoder during training.")
     parser.add_argument("--freeze_cand_encoder", action='store_true',
                         help="Freeze weights of candidate encoder during training.")
+    parser.add_argument("--project_encodings", action='store_true',
+                        help="Pass encodings through projection layer.")
     parser.add_argument("--add_eye_to_init", action='store_true',
                         help="Add identity matrix to initial weights of projection layers.")
     parser.add_argument("--learning_rate", default=1e-3, type=float,
@@ -557,7 +559,11 @@ def main():
     opt.max_length = opt.max_seq_length
     if opt.encoder_type == 'xlm':
         opt.max_position_embeddings = opt.max_seq_length
-    
+    if opt.add_eye_to_init:
+        if not opt.project_encodings:
+            msg = "--add_eye_to_init can only be used in combination with --project_encodings"
+            raise ValueError(msg)
+        
     # Setup distant debugging if needed
     if opt.server_ip and opt.server_port:
         # Distant debugging - see https://code.visualstudio.com/docs/python/debugging#_attach-to-a-local-script
