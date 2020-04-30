@@ -608,23 +608,33 @@ def main():
     task = "hyperdisco"
     num_labels = 2
 
+    # Load encoder config
+    opt.encoder_type = opt.encoder_type.lower()
+    config_class, model_class, tokenizer_class = MODEL_CLASSES[opt.encoder_type]
+    if opt.encoder_config_name: 
+        name_or_path = opt.encoder_config_name
+    elif opt.do_train:
+        name_or_path = opt.encoder_name_or_path
+    else:
+        # If we don't train, --encoder_name_or_path is optional, so assume encoder config is in --model_dir
+        name_or_path = opt.model_dir
+    config = config_class.from_pretrained(name_or_path,
+                                          num_labels=num_labels,
+                                          finetuning_task=task,
+                                          cache_dir=opt.encoder_cache_dir if opt.encoder_cache_dir else None)
+    
     # Training
-    config_class, model_class, tokenizer_class = MODEL_CLASSES[opt.encoder_type]    
     if opt.do_train:
         # Create model directory if needed
         if not os.path.exists(opt.model_dir) and opt.local_rank in [-1, 0]:
             os.makedirs(opt.model_dir)
 
-        # Make sure only the first process in distributed training will download model & vocab
+            
+        # Make sure only the first process in distributed training will download model 
         if opt.local_rank not in [-1, 0]:
             torch.distributed.barrier()  
 
         # Load pretrained encoder and tokenizer
-        opt.encoder_type = opt.encoder_type.lower()
-        config = config_class.from_pretrained(opt.encoder_config_name if opt.encoder_config_name else opt.encoder_name_or_path,
-                                              num_labels=num_labels,
-                                              finetuning_task=task,
-                                              cache_dir=opt.encoder_cache_dir if opt.encoder_cache_dir else None)
         tokenizer = tokenizer_class.from_pretrained(opt.tokenizer_name if opt.tokenizer_name else opt.encoder_name_or_path,
                                                     do_lower_case=opt.do_lower_case,
                                                     cache_dir=opt.encoder_cache_dir if opt.encoder_cache_dir else None)
@@ -632,14 +642,17 @@ def main():
                                                          from_tf=bool('.ckpt' in opt.encoder_name_or_path),
                                                          config=config,
                                                          cache_dir=opt.encoder_cache_dir if opt.encoder_cache_dir else None)
-        print(config)
+        logger.info(config)
 
+        # Save config in model directory
+        config.save_pretrained(opt.model_dir)
+        
         # End of barrier
         if opt.local_rank == 0:
             torch.distributed.barrier()  
 
         # Initialize model
-        model = BiEncoderScorer(opt, pretrained_encoder)
+        model = BiEncoderScorer(opt, pretrained_encoder=pretrained_encoder)
         model.to(opt.device)
 
         # Run training loop
@@ -656,11 +669,18 @@ def main():
             torch.save(opt, os.path.join(opt.model_dir, 'training_args.bin'))
 
     if opt.do_eval or opt.do_pred:
+        # Load training options
+        train_opt = torch.load(os.path.join(opt.model_dir, 'training_args.bin'))
+        
+        # Update options based on training options
+        if train_opt.project_encodings:
+            opt.project_encodings=True
+        
         # Load tokenizer
         tokenizer = tokenizer_class.from_pretrained(opt.model_dir, do_lower_case=opt.do_lower_case)
 
         # Load model
-        model = BiEncoderScorer(opt, None)
+        model = BiEncoderScorer(opt, pretrained_encoder=None, encoder_config=config)
         model.load_state_dict(torch.load(os.path.join(opt.model_dir, 'state_dict.pt')))
         model.to(opt.device)
 
@@ -674,7 +694,7 @@ def main():
         cand_inputs = make_candidate_set(opt, tokenizer, dev_data)
 
         # Load tokenizer and model
-        eval_results = evaluate(opt, model_to_eval, tokenizer, dev_set, cand_inputs)
+        eval_results = evaluate(opt, model, tokenizer, dev_set, cand_inputs, dev_data["queries"], dev_data["candidates"])
 
     # Prediction on test set
     if opt.do_pred and opt.local_rank in [-1, 0]:

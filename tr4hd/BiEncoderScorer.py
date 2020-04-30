@@ -3,16 +3,37 @@
 import math
 from copy import deepcopy
 import torch
+from transformers import XLMModel, BertModel
+
+MODEL_CLASSES = {
+    'bert': BertModel,
+    'xlm': XLMModel,
+}
 
 class BiEncoderScorer(torch.nn.Module):
     """ Bi-encoder scoring module. """
 
-    def __init__(self, opt, pretrained_encoder):
+    def __init__(self, opt, pretrained_encoder=None, encoder_config=None):
+        """ Init from a pretrained encoder or an encoder config (in which case an encoder is initialized). If you are going to load a pretrained state_dict, then you will probably want to provide a config.
+        Args:
+        - pretrained_encoder
+        - encoder_config
+        
+        """
+        
         super(BiEncoderScorer, self).__init__()
+        # Check args
+        if pretrained_encoder is None and encoder_config is None:
+            raise ValueError("Either pretrained_encoder or encoder_config must be provided.")
+
         self.normalize_encodings = True
         
         # Make 2 copies of the pretrained model
-        if pretrained_encoder is not None:
+        if pretrained_encoder is None:
+            model_class = MODEL_CLASSES[opt.encoder_type]
+            self.encoder_q = model_class(encoder_config)
+            self.encoder_c = deepcopy(self.encoder_q)
+        else:
             self.encoder_q = deepcopy(pretrained_encoder)
             self.encoder_c = deepcopy(pretrained_encoder)
         
