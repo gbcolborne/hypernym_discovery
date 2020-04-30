@@ -124,6 +124,7 @@ class BiEncoderScorer(torch.nn.Module):
             raise ValueError("query_encs must be 1-D or 2-D")
         nb_axes = len(cand_encs.size())
         if nb_axes == 1:
+            nb_cands = 1
             cand_hidden_dim = cand_encs.size()[0]
         elif nb_axes == 2:
             nb_cands, cand_hidden_dim = cand_encs.size()
@@ -151,12 +152,12 @@ class BiEncoderScorer(torch.nn.Module):
             if nb_cands > 1:
                 scores = torch.bmm(query_encs.unsqueeze(1), cand_encs.unsqueeze(2)).squeeze(2).squeeze(1)
             else:
-                scores = torch.matmul(cand_encs, query_encs.permute(1,0)).unsqueeze(0)
+                scores = torch.matmul(cand_encs, query_encs.permute(1,0))
         else:
             if nb_cands > 1:
                 scores = torch.matmul(query_encs, cand_encs.permute(1,0))
             else:
-                scores = torch.matmul(query_encs, cand_encs.permute(1,0)).unsqueeze(0)
+                scores = torch.matmul(query_encs, cand_encs).unsqueeze(0)
 
         # Clip to min=0 (i.e. ReLU)
         #scores = scores.clamp_min(0.0)
