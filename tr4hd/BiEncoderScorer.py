@@ -115,21 +115,17 @@ class BiEncoderScorer(torch.nn.Module):
         """
         # Inspect input tensors
         nb_axes = len(query_encs.size())
-        if nb_axes == 1:
-            nb_queries = 1
-            hidden_dim = query_encs.size()[0]
-        elif nb_axes == 2:
-            nb_queries, hidden_dim = query_encs.size()
-        else:
+        if nb_axes > 2:
             raise ValueError("query_encs must be 1-D or 2-D")
-        nb_axes = len(cand_encs.size())
         if nb_axes == 1:
-            nb_cands = 1
-            cand_hidden_dim = cand_encs.size()[0]
-        elif nb_axes == 2:
-            nb_cands, cand_hidden_dim = cand_encs.size()
-        else:
+            query_encs = query_encs.unsqueeze(0)
+        nb_queries, hidden_dim = query_encs.size()
+        nb_axes = len(cand_encs.size())
+        if nb_axes > 2:
             raise ValueError("cand_encs must be 1-D or 2-D")
+        if nb_axes == 1:
+            cand_encs = cand_encs.unsqueeze(0)
+        nb_cands, cand_hidden_dim = cand_encs.size()
         assert hidden_dim == cand_hidden_dim
         if nb_queries > 1 and nb_cands > 1:
             if nb_queries != nb_cands:
@@ -148,17 +144,13 @@ class BiEncoderScorer(torch.nn.Module):
                 cand_encs = cand_encs / torch.norm(cand_encs, p=2)
             
         # Compute dot product
-        if nb_queries > 1:
-            if nb_cands > 1:
+        if nb_cands > 1:
+            if nb_queries > 1:
                 scores = torch.bmm(query_encs.unsqueeze(1), cand_encs.unsqueeze(2)).squeeze(2).squeeze(1)
             else:
-                scores = torch.matmul(cand_encs, query_encs.permute(1,0))
+                scores = torch.matmul(query_encs, cand_encs.permute(1,0)).squeeze(1).squeeze(0)
         else:
-            if nb_cands > 1:
-                scores = torch.matmul(query_encs, cand_encs.permute(1,0))
-            else:
-                scores = torch.matmul(query_encs, cand_encs).unsqueeze(0)
-
+            scores = torch.matmul(query_encs, cand_encs.permute(1,0)).squeeze(1)
         # Clip to min=0 (i.e. ReLU)
         #scores = scores.clamp_min(0.0)
         return scores
