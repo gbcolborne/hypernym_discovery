@@ -435,7 +435,7 @@ def train(opt, model, tokenizer):
                 model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
                 logger.info("  Saving model checkpoint to %s", output_dir)
                 tokenizer.save_pretrained(opt.model_dir)
-                torch.save(model_to_save.state_dict(), os.path.join(output_dir, 'state_dict.pkl'))
+                torch.save(model_to_save.state_dict(), os.path.join(output_dir, 'state_dict.pt'))
                 torch.save(opt, os.path.join(output_dir, 'training_args.bin'))
                 rotate_checkpoints(opt.save_total_limit, opt.model_dir, checkpoint_prefix)
                     
@@ -652,7 +652,7 @@ def main():
             logger.info("  Saving model to %s", opt.model_dir)
             model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
             tokenizer.save_pretrained(opt.model_dir)
-            torch.save(model_to_save.state_dict(), os.path.join(opt.model_dir, 'state_dict.pkl'))
+            torch.save(model_to_save.state_dict(), os.path.join(opt.model_dir, 'state_dict.pt'))
             torch.save(opt, os.path.join(opt.model_dir, 'training_args.bin'))
 
     if opt.do_eval or opt.do_pred:
@@ -661,7 +661,7 @@ def main():
 
         # Load model
         model = BiEncoderScorer(opt, None)
-        model.load_state_dict(torch.load(os.path.join(opt.model_dir, 'state_dict.pkl')))
+        model.load_state_dict(torch.load(os.path.join(opt.model_dir, 'state_dict.pt')))
         model.to(opt.device)
 
     # Evaluation on dev set
