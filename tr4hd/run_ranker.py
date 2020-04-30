@@ -201,7 +201,7 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs, dev_queries, candida
 
     # Get model predictions
     y_probs = get_model_predictions(opt, model, tokenizer, eval_data, cand_inputs)
-    logging.info("  Range(y_probs): {:.3f}-{:.3f}".format(np.min(y_probs), np.max(y_probs)))
+    logger.debug("  Range(y_probs): {:.3f}-{:.3f}".format(np.min(y_probs), np.max(y_probs)))
     
     # Get labels
     y_true = eval_data.tensors[3].to(device=opt.device)
@@ -493,9 +493,9 @@ def main():
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model (warning: may also remove accents).")
 
-    parser.add_argument("--per_gpu_eval_batch_size", default=32, type=int,
+    parser.add_argument("--per_gpu_eval_batch_size", default=512, type=int,
                         help="Batch size (nb queries) per GPU/CPU for evaluation.")
-    parser.add_argument("--per_gpu_train_batch_size", default=64, type=int,
+    parser.add_argument("--per_gpu_train_batch_size", default=32, type=int,
                         help="Batch size (nb queries) per GPU/CPU for training.")
     parser.add_argument("--per_query_nb_examples", default=32, type=int, 
                         help=("Nb candidates evaluated per query in a batch during training. "
@@ -695,7 +695,10 @@ def main():
 
         # Load tokenizer and model
         eval_results = evaluate(opt, model, tokenizer, dev_set, cand_inputs, dev_data["queries"], dev_data["candidates"])
-
+        logger.info("  ****Evaluation Results*****")
+        for k, v in eval_results.items():
+            print("{}: {}".format(k, v))
+        
     # Prediction on test set
     if opt.do_pred and opt.local_rank in [-1, 0]:
         predict(opt, model, tokenizer)
