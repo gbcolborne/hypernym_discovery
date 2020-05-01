@@ -138,7 +138,7 @@ def get_top_k_candidates_and_scores(scores):
         y_scores = scores[q,:]
         top_k_candidate_ids = np.argsort(y_scores).tolist()[-RANKING_CUTOFF:][::-1]
         top_k_scores = [y_scores[i] for i in top_k_candidate_ids]
-        top_candidates_and_scores.append(zip(top_k_candidate_ids, top_k_scores))
+        top_candidates_and_scores.append(list(zip(top_k_candidate_ids, top_k_scores)))
     return top_candidates_and_scores
 
 
@@ -173,12 +173,17 @@ def predict(opt, model, tokenizer):
     logger.info("  Writing top {} candidates for each query to {}".format(RANKING_CUTOFF, path_top_candidates))
     logger.info("  Writing top {} scores for each query to {}".format(RANKING_CUTOFF, path_top_scores))
     with open(path_top_candidates, 'w') as fc, open(path_top_scores, 'w') as fs:
-        for i, topk in enumerate(top_candidates_and_scores):
-            fc.write("{}\n".format("\t".join([candidates[c] for (c,s) in topk])))
-            fs.write("{}\n".format("\t".join(["{:.5f}".format(s) for (c,s) in topk])))
-            query = queries[i]
-            topk_string = ', '.join(["('{}',{:.5f})".format(candidates[c],s) for (c,s) in topk])
-            logger.info("  {}. Top candidates for '{}': {}".format(i+1, query, topk_string))
+        for topk in top_candidates_and_scores:
+            last_ix = len(topk) - 1
+            for i, (cand_id, score) in enumerate(topk):
+                fc.write(test_data["candidates"][cand_id])
+                fs.write("{:.5f}".format(score))
+                if i == last_ix:
+                    fc.write("\n")
+                    fs.write("\n")
+                else:
+                    fc.write("\t")
+                    fs.write("\t")
     return
 
 
@@ -186,7 +191,7 @@ def compute_loss(logits, targets, reduction=None):
     return F.binary_cross_entropy(logits, targets, reduction=reduction)
 
 
-def evaluate(opt, model, tokenizer, eval_data, cand_inputs, dev_queries, candidates):
+def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     """ Evaluate model on labeled dataset (without grad). Return dictionary containing average loss and evaluation metrics.
     Args:
     - opt
@@ -223,24 +228,6 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs, dev_queries, candida
         ap = average_precision_score(y_true=y_true[i], y_score=y_probs[i])
         ap_scores.append(ap)
 
-        # Test
-        if i < 5:
-            logger.debug("  ")
-            logger.debug("  Query: {}".format(dev_queries[i]))
-            logger.debug("  Range of scores: {}-{}".format(np.min(y_probs[i]), np.max(y_probs[i])))        
-            # Get top 15 candidates
-            top_k_candidate_ids = np.argsort(y_probs[i]).tolist()[-RANKING_CUTOFF:][::-1]
-            top_k_candidates = [candidates[c] for c in top_k_candidate_ids]
-            top_k_scores = [y_probs[i][c] for c in top_k_candidate_ids]
-            
-            logger.debug("  Top 15 candidate IDs: {}".format(", ".join(str(x) for x in top_k_candidate_ids)))
-            logger.debug("  Top 15 candidates: {}".format(", ".join(top_k_candidates)))
-            logger.debug("  Top 15 scores: {}".format(", ".join("{:.3f}".format(x) for x in top_k_scores)))
-            logger.debug("  Nb gold hypernyms: {}".format(np.sum(y_true[i])))
-            logger.debug("  Gold hypernym IDs: {}".format([i for i,x in enumerate(y_true[i]) if x == 1]))
-            logger.debug("  Gold hypernyms: {}".format([candidates[i] for i,x in enumerate(y_true[i]) if x == 1]))
-            logger.debug("  Average precision: {:.5f}".format(ap))
-            
     # Compute mean average precision
     MAP = np.mean(ap_scores)
     results["MAP"] = MAP
@@ -405,7 +392,7 @@ def train(opt, model, tokenizer):
 
                 # Check if we validate on dev set
                 if opt.local_rank == -1 and opt.evaluate_during_training:  # Only evaluate when single GPU otherwise metrics may not average well
-                    results = evaluate(opt, model, tokenizer, dev_set, cand_inputs, dev_data["queries"], dev_data["candidates"])
+                    results = evaluate(opt, model, tokenizer, dev_set, cand_inputs)
                     for key, value in results.items():
                         eval_key = 'eval_{}'.format(key)
                         logs[eval_key] = value
@@ -694,7 +681,7 @@ def main():
         cand_inputs = make_candidate_set(opt, tokenizer, dev_data)
 
         # Load tokenizer and model
-        eval_results = evaluate(opt, model, tokenizer, dev_set, cand_inputs, dev_data["queries"], dev_data["candidates"])
+        eval_results = evaluate(opt, model, tokenizer, dev_set, cand_inputs)
         logger.info("  ****Evaluation Results*****")
         for k, v in eval_results.items():
             print("{}: {}".format(k, v))
