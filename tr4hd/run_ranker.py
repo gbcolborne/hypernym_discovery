@@ -378,7 +378,7 @@ def train(opt, model, tokenizer):
                     norm_w_grad += torch.norm(param.grad, p=2).item()
                 
             # Update
-            clip_grad(opt, model, optimizer)
+            maybe_clip_grad(opt, model, optimizer)
             optimizer.step()
             model.zero_grad()
             global_step += 1
