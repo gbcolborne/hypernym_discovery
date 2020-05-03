@@ -234,12 +234,13 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     return results
 
 
-def clip_grad(opt, model, optimizer):
+def maybe_clip_grad(opt, model, optimizer):
     """ Clip grad norm in place. """
-    if opt.fp16:
-        torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), opt.max_grad_norm)
-    else:
-        torch.nn.utils.clip_grad_norm_(model.parameters(), opt.max_grad_norm)
+    if opt.max_grad_norm and opt.max_grad_norm > 0:
+        if opt.fp16:
+            torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), opt.max_grad_norm)
+        else:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), opt.max_grad_norm)
 
         
 def train(opt, model, tokenizer):
@@ -504,7 +505,7 @@ def main():
                         help="Weight deay if we apply some.")
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
                         help="Epsilon for Adam optimizer.")
-    parser.add_argument("--max_grad_norm", default=10.0, type=float,
+    parser.add_argument("--max_grad_norm", default=None, type=float, required=False,
                         help="Max gradient norm.")
     parser.add_argument("--num_train_epochs", default=3.0, type=float,
                         help="Total number of training epochs to perform.")
