@@ -52,6 +52,10 @@ class BiEncoderScorer(torch.nn.Module):
             self.project_encodings = True
         else:
             self.project_encodings = False
+        if opt.relu_after_projection:
+            self.relu_after_projection = True
+        else:
+            self.relu_after_projection = False
         if self.project_encodings:
             # Linear layer after encoding
             self.hidden_dim = self.encoder_q.config.emb_dim
@@ -98,7 +102,8 @@ class BiEncoderScorer(torch.nn.Module):
             # Apply linear layer
             out = self.output_q(encs)
             # ReLU
-            out = out.clamp_min(0.)
+            if self.relu_after_projection:
+                out = out.clamp_min(0.)
             return out
         else:
             return encs

@@ -497,6 +497,8 @@ def main():
                         help="Freeze weights of candidate encoder during training.")
     parser.add_argument("--project_encodings", action='store_true',
                         help="Pass encodings through projection layer.")
+    parser.add_argument("--relu_after_projection", action='store_true',
+                        help="Pass projected encodings through ReLU.")
     parser.add_argument("--add_eye_to_init", action='store_true',
                         help="Add identity matrix to initial weights of projection layers.")
     parser.add_argument("--learning_rate", default=1e-3, type=float,
@@ -552,6 +554,11 @@ def main():
     if opt.add_eye_to_init:
         if not opt.project_encodings:
             msg = "--add_eye_to_init can only be used in combination with --project_encodings"
+            raise ValueError(msg)
+
+    if opt.relu_after_projection:
+        if not opt.project_encodings:
+            msg = "--relu_after_projection can only be used in combination with --project_encodings"
             raise ValueError(msg)
         
     # Setup distant debugging if needed
