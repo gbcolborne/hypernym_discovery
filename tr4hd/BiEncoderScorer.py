@@ -151,8 +151,10 @@ class BiEncoderScorer(torch.nn.Module):
                 scores = torch.matmul(query_encs, cand_encs.permute(1,0)).squeeze(1).squeeze(0)
         else:
             scores = torch.matmul(query_encs, cand_encs.permute(1,0)).squeeze(1)
-        # Clip to min=0 (i.e. ReLU)
-        scores = scores.clamp_min(0.0)
+        # Squash with sigmoid (as dot product of normalized encodings
+        # has range (-1,1), but our loss can only handle the range
+        # (0,1).
+        scores = torch.sigmoid(scores)
         return scores
 
     def forward(self, query_inputs, cand_inputs):
