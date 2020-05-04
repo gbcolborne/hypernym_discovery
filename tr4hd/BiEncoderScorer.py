@@ -38,14 +38,16 @@ class BiEncoderScorer(torch.nn.Module):
             self.encoder_c = deepcopy(pretrained_encoder)
         
         # Check if we freeze the candidate encoder
-        if opt.freeze_cand_encoder:
-            self.encoder_c.require_grad = False
-        else:
-            self.encoder_c.require_grad = True
-        if opt.freeze_query_encoder:
-            self.encoder_q.require_grad = False
-        else:
-            self.encoder_q.require_grad = True
+        for p in self.encoder_c.parameters():
+            if opt.freeze_cand_encoder:
+                p.requires_grad = False
+            else:
+                p.requires_grad = True
+        for p in self.encoder_q.parameters():
+            if opt.freeze_query_encoder:
+                p.requires_grad = False
+            else:
+                p.requires_grad = True
 
         # Check if we project encodings
         if opt.project_encodings:
