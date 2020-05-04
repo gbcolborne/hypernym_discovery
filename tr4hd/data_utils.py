@@ -55,13 +55,12 @@ def make_train_set(opt, tokenizer, train_data, max_pos_ratio=0.5, verbose=False)
         np.random.shuffle(gold_cand_ids[i])
 
     # Subsample positive examples if necessary
+    max_pos = int(max_pos_ratio * opt.per_query_nb_examples)
     nb_pos_discarded = 0
     for i in range(len(gold_cand_ids)):
         pos = gold_cand_ids[i]
-        pos_ratio = len(pos) / opt.per_query_nb_examples
-        if pos_ratio > max_pos_ratio:
-            end = int(len(pos) * max_pos_ratio) + 1
-            kept = pos[:end]
+        if len(pos) > max_pos:
+            kept = pos[:max_pos]
             nb_pos_discarded += len(pos) - len(kept)
             gold_cand_ids[i] = kept
     if nb_pos_discarded > 0 and verbose:
