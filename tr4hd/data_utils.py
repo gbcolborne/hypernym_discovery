@@ -33,7 +33,7 @@ def make_test_set(opt, tokenizer, test_data):
     return make_q_or_c_dataset(opt, tokenizer, queries, verbose=False)
 
 
-def make_train_set(opt, tokenizer, train_data, max_pos_ratio=0.5, verbose=False):
+def make_train_set(opt, tokenizer, train_data, pos_ratio=0.1, verbose=False):
     """ Make labeled dataset for training set. Subsample candidates using negative sampling.
     Args:
     - opt:
@@ -41,8 +41,8 @@ def make_train_set(opt, tokenizer, train_data, max_pos_ratio=0.5, verbose=False)
     - train_data: dict containing queries (list), candidates (list), and gold_hypernym_candidate_ids (list of lists, one per query)
 
     """
-    if max_pos_ratio <=0 or max_pos_ratio > 1:
-        msg = "max_pos_ratio must be in (0,1]"
+    if pos_ratio <=0 or pos_ratio > 1:
+        msg = "pos_ratio must be in (0,1]"
         raise ValueError(msg)
     
     # Load training data
@@ -50,26 +50,35 @@ def make_train_set(opt, tokenizer, train_data, max_pos_ratio=0.5, verbose=False)
     candidates = train_data["candidates"]
     gold_cand_ids = train_data["gold_hypernym_candidate_ids"]
 
-    # Shuffle positive examples
-    for i in range(len(gold_cand_ids)):
-        np.random.shuffle(gold_cand_ids[i])
+    # Make buffer of random floats to save time on random sampling
+    buffer_size = 1000000
+    rng = np.random.random(buffer_size)
+    rng_ix = 0
 
-    # Subsample positive examples if necessary
-    max_pos = int(max_pos_ratio * opt.per_query_nb_examples)
-    nb_pos_discarded = 0
+    # Get constant number of positive examples per query by subsampling or oversampling if necessary. 
+    target_nb_pos = int(pos_ratio * opt.per_query_nb_examples)
     for i in range(len(gold_cand_ids)):
         pos = gold_cand_ids[i]
-        if len(pos) > max_pos:
-            kept = pos[:max_pos]
-            nb_pos_discarded += len(pos) - len(kept)
-            gold_cand_ids[i] = kept
-    if nb_pos_discarded > 0 and verbose:
-        msg = "  {} positive hypernyms removed because the query had more than {}".format(nb_pos_discarded, opt.per_query_nb_examples)
-        logger.warning(msg)
+        nb_pos = len(pos)
+        if nb_pos == target_nb_pos:
+            np.random.shuffle(gold_cand_ids[i])
+        else:
+            sample = []
+            for j in range(target_nb_pos):
+                sampled_ix = int(rng[rng_ix] * nb_pos)
+                sample.append(pos[sampled_ix])
+                rng_ix += 1
+                if rng_ix == buffer_size:
+                    # Regenerate buffer
+                    rng = np.random.random(buffer_size)
+                    rng_ix = 0
+            gold_cand_ids[i] = sample
 
     # Sample negative examples for training
     all_cand_ids = list(range(len(candidates)))
     neg_cand_ids = sample_negative_examples(all_cand_ids, gold_cand_ids, opt.per_query_nb_examples, verbose=verbose)
+
+    # Combine positive and negative examples, and shuffle
     cand_ids = []
     labels = []
     for i in range(len(queries)):
@@ -276,6 +285,7 @@ def make_q_and_c_dataset(opt, tokenizer, queries, candidate_ids, candidate_label
         if candidate_labels:
             logger.info("  Nb positive examples: {}".format(nb_pos_examples))
             logger.info("  Nb negative examples: {}".format(nb_neg_examples))
+            logger.info("  Ratio of positive examples: {}".format(nb_pos_examples/(nb_pos_examples+nb_neg_examples)))
             logger.info("  Max length: {}".format(opt.max_seq_length))
     input_ids, nb_tokens = encode_string_inputs(opt, tokenizer, queries, verbose=verbose)
     # Log a few examples

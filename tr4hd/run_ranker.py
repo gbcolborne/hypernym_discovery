@@ -275,7 +275,7 @@ def train(opt, model, tokenizer):
     opt.train_batch_size = opt.per_gpu_train_batch_size * max(1, opt.n_gpu)
 
     # Make training set
-    train_set = make_train_set(opt, tokenizer, train_data, max_pos_ratio=opt.max_pos_ratio, verbose=True)
+    train_set = make_train_set(opt, tokenizer, train_data, pos_ratio=opt.pos_ratio, verbose=True)
     train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
     train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
 
@@ -317,6 +317,7 @@ def train(opt, model, tokenizer):
     logger.info("  Batch size = %d pairs", opt.train_batch_size)
     logger.info("  Nb batches = %d", len(train_dataloader))
     logger.info("  Nb examples/query (k): {}".format(opt.per_query_nb_examples))
+    logger.info("  Pos ratio: {}".format(opt.pos_ratio))
     logger.info("  Nb Epochs = %d", opt.num_train_epochs)
     logger.info("  Instantaneous batch size per GPU = %d queries", opt.per_gpu_train_batch_size)
     logger.info("  Total train batch size (w. parallel & distributed) = %d queries",
@@ -332,7 +333,7 @@ def train(opt, model, tokenizer):
         cand_ix = epoch % opt.per_query_nb_examples
         # If we've evaluated all candidates, reload train set, so that we get new negative samples        
         if cand_ix == 0 and global_step > 0:
-            train_set = make_train_set(opt, tokenizer, train_data, max_pos_ratio=opt.max_pos_ratio, verbose=False)
+            train_set = make_train_set(opt, tokenizer, train_data, pos_ratio=opt.pos_ratio, verbose=False)
             train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
             train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
         epoch_iterator = tqdm(train_dataloader, desc="Step (batch)", leave=False, disable=opt.local_rank not in [-1, 0])
@@ -412,7 +413,7 @@ def train(opt, model, tokenizer):
                 
                 for key, value in logs.items():
                     tb_writer.add_scalar(key, value, global_step)
-                logger.info("  " + json.dumps({**logs, **{'step': global_step}}))
+                #logger.info("  " + json.dumps({**logs, **{'step': global_step}}))
                     
             # Check if we save model checkpoint
             if opt.local_rank in [-1, 0] and opt.save_steps > 0 and global_step % opt.save_steps == 0:
@@ -486,11 +487,9 @@ def main():
     parser.add_argument("--per_gpu_train_batch_size", default=32, type=int,
                         help="Batch size (nb queries) per GPU/CPU for training.")
     parser.add_argument("--per_query_nb_examples", default=32, type=int, 
-                        help=("Nb candidates evaluated per query in a batch during training. "
-                              "Nb negative examples is obtained by subtracting "
-                              "the number of positive examples for a given query."))
-    parser.add_argument("--max_pos_ratio", type=float, default=0.5,
-                        help="Maximum ratio of positive examples per query")
+                        help=("Nb candidates evaluated per query per epoch during training."))
+    parser.add_argument("--pos_ratio", type=float, default=0.1,
+                        help="Ratio of positive examples per query")
     parser.add_argument("--freeze_query_encoder", action='store_true',
                         help="Freeze weights of query encoder during training.")
     parser.add_argument("--freeze_cand_encoder", action='store_true',
@@ -513,7 +512,6 @@ def main():
                         help="Total number of training epochs to perform.")
     parser.add_argument("--max_steps", default=-1, type=int,
                         help="If > 0: set total number of training steps to perform. Override num_train_epochs.")
-
     parser.add_argument('--logging_steps', type=int, default=50,
                         help="Log every X updates steps.")
     parser.add_argument('--save_steps', type=int, default=50,
@@ -526,7 +524,6 @@ def main():
                         help="Overwrite the content of the directory containing the model")
     parser.add_argument('--seed', type=int, default=91500,
                         help="random seed for initialization")
-
     parser.add_argument('--fp16', action='store_true',
                         help="Whether to use 16-bit (mixed) precision (through NVIDIA apex) instead of 32-bit")
     parser.add_argument('--fp16_opt_level', type=str, default='O1',
