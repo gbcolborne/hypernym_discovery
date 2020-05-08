@@ -8,7 +8,7 @@ lines = []
 lines.append("#! /bin/bash")
 
 # Constant part of our training command
-base_cmd = "CUDA_VISIBLE_DEVICES=0 nohup python run_ranker.py"
+base_cmd = "CUDA_VISIBLE_DEVICES=0 python run_ranker.py"
 base_cmd += " --data_dir ../data/1A_random_split/ --lang en"
 base_cmd += " --encoder_type xlm --encoder_name_or_path ../PretrainedModel_XLM_small_vocab"
 base_cmd += " --do_train --evaluate_during_training"
