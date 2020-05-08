@@ -13,13 +13,15 @@ base_cmd += " --data_dir ../data/1A_random_split/ --lang en"
 base_cmd += " --encoder_type xlm --encoder_name_or_path ../PretrainedModel_XLM_small_vocab"
 base_cmd += " --do_train --evaluate_during_training"
 base_cmd += " --per_query_nb_examples 50 --per_gpu_eval_batch_size 512"
-base_cmd += " --max_steps 50000 --logging_steps 2000 --save_steps 2000 --save_total_limit 1"
+base_cmd += " --max_steps 40000 --logging_steps 2000 --save_steps 2000 --save_total_limit 1"
 
 # Add flags
 base_cmd += " --freeze_query_encoder"
+base_cmd += " --freeze_cand_encoder"
+base_cmd += " --project_encodings --add_eye_to_init"
 
 # Set prefix for output directories
-output_prefix = "Out1"
+output_prefix = "Out5"
 
 # Map short param names to long ones
 param_key_to_name = {"bs":"per_gpu_train_batch_size",
