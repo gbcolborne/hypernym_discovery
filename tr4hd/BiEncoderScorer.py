@@ -36,7 +36,7 @@ class BiEncoderScorer(torch.nn.Module):
         else:
             self.encoder_q = deepcopy(pretrained_encoder)
             self.encoder_c = deepcopy(pretrained_encoder)
-        
+            
         # Check if we freeze the candidate encoder
         for p in self.encoder_c.parameters():
             if opt.freeze_cand_encoder:
@@ -49,6 +49,11 @@ class BiEncoderScorer(torch.nn.Module):
             else:
                 p.requires_grad = True
 
+        # Dropout layer
+        self.do_dropout = opt.dropout_prob > 0
+        if self.do_dropout:
+            self.dropout = torch.nn.Dropout(p=opt.dropout_prob, inplace=True) 
+                
         # Check if we project encodings
         if opt.project_encodings:
             self.project_encodings = True
@@ -139,6 +144,11 @@ class BiEncoderScorer(torch.nn.Module):
                 msg = "nb_queries and nb_cands must match if both tensors are 2D (in this case, we perform a batch dot product on pairs of encodings)"
                 raise ValueError(msg)
 
+        # Apply dropout (in place)
+        if self.do_dropout:
+            self.dropout(query_encs)
+            self.dropout(cand_encs)
+            
         # Normalize
         if self.normalize_encodings:
             if nb_queries > 1:

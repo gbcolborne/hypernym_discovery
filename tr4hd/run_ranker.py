@@ -413,7 +413,7 @@ def train(opt, model, tokenizer):
                 
                 for key, value in logs.items():
                     tb_writer.add_scalar(key, value, global_step)
-                #logger.info("  " + json.dumps({**logs, **{'step': global_step}}))
+                logger.info("  " + json.dumps({**logs, **{'step': global_step}}))
                     
             # Check if we save model checkpoint
             if opt.local_rank in [-1, 0] and opt.save_steps > 0 and global_step % opt.save_steps == 0:
@@ -502,6 +502,8 @@ def main():
                         help="Add identity matrix to initial weights of projection layers.")
     parser.add_argument("--learning_rate", default=1e-3, type=float,
                         help="The initial learning rate for Adam.")
+    parser.add_argument("--dropout_prob", default=0.0, type=float,
+                        help="Probability of zeroing out values in the query and candidate encodings.")
     parser.add_argument("--weight_decay", default=0.0, type=float,
                         help="Weight deay if we apply some.")
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
