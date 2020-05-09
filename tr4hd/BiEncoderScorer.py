@@ -90,7 +90,8 @@ class BiEncoderScorer(torch.nn.Module):
             # Apply linear layer
             out = self.output_c(encs)
             # ReLU
-            out = out.clamp_min(0.)
+            if self.relu_after_projection:
+                out = out.clamp_min(0.)
             return out
         else:
             return encs
