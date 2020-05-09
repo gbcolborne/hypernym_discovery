@@ -199,10 +199,8 @@ def predict(opt, model, tokenizer):
 
 
 def compute_loss(logits, targets, reduction=None):
-    nb_axes_logits = len(logits.size())
-    nb_axes_targets = len(targets.size())
-    assert nb_axes_logits == nb_axes_targets
-    assert nb_axes_logits in [1,2]
+    assert len(logits.size()) == 2
+    assert len(targets.size()) == 1
     y_pred = F.log_softmax(logits, dim=-1)
     loss = F.nll_loss(y_pred, targets)
     return loss
