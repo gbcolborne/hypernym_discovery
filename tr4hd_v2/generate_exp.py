@@ -27,13 +27,15 @@ output_prefix = "Out6"
 param_key_to_name = {"bs":"per_gpu_train_batch_size",
                      "lr":"learning_rate",
                      "dp":"dropout_prob",
-                     "ng":"nb_neg_samples"}
+                     "ng":"nb_neg_samples",
+                     "gn":"max_grad_norm"}
 
 # Set param values we want to test
 named_param_values = [("bs", ["16", "32", "64"]),
                       ("lr", ["le-6", "1e-5", "1e-4", "1e-3"]),
                       ("dp", ["0.0", "0.1", "0.2"]),
-                      ("ng", ["5", "10", "20"])]
+                      ("ng", ["4", "8", "16"])
+                      ("gn", ["-1", "1", "10"]]
 
 # Generate all combinations
 settings = [{}]
