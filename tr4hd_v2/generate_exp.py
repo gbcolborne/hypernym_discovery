@@ -21,7 +21,7 @@ base_cmd += " --max_steps 40000 --logging_steps 2000 --save_steps 2000 --save_to
 #base_cmd += " --project_encodings --add_eye_to_init"
 
 # Set prefix for output directories
-output_prefix = "Out6"
+output_prefix = "Out1"
 
 # Map short param names to long ones
 param_key_to_name = {"bs":"per_gpu_train_batch_size",
@@ -31,11 +31,11 @@ param_key_to_name = {"bs":"per_gpu_train_batch_size",
                      "gn":"max_grad_norm"}
 
 # Set param values we want to test
-named_param_values = [("bs", ["16", "32", "64"]),
-                      ("lr", ["le-6", "1e-5", "1e-4", "1e-3"]),
+named_param_values = [("bs", ["16", "32"]),
+                      ("lr", ["5e-6", "1e-5", "2e-5", "5e-5"]),
                       ("dp", ["0.0", "0.1", "0.2"]),
-                      ("ng", ["4", "8", "16"])
-                      ("gn", ["-1", "1", "10"]]
+                      ("ng", ["4", "8", "16", "32"]),
+                      ("gn", ["-1", "1", "10"])]
 
 # Generate all combinations
 settings = [{}]
@@ -49,6 +49,9 @@ for key, values in named_param_values:
             tmp.append(new_setting)
     settings = tmp[:]
 
+# Remove specific combinations (e.g. to avoid using too much memory)
+settings = [x for x in settings if not (x["ng"] == 32 and x["bs"] == 32)]
+                      
 # Take a random sample of settings
 NB_TESTS = 32
 seed=91500
