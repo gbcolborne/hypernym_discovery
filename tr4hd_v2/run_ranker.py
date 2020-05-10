@@ -461,7 +461,9 @@ def main():
                         help="Model type selected in the list: " + ", ".join(MODEL_CLASSES.keys()))
     parser.add_argument("--model_dir", default=None, type=str, required=True,
                         help="Path of directory where model and tokenizer are saved (if do_train) or loaded (if do_eval or do_pred)")
-    parser.add_argument("--eval_dir", default=None, type=str, required=True,
+
+    # Required if do_train or do_pred
+    parser.add_argument("--eval_dir", default=None, type=str, required=False,
                         help="The output directory where the predictions and evaluation results will be written.")
 
     # Required if do_train
@@ -550,7 +552,7 @@ def main():
             raise ValueError("--encoder_name_or_path must be specified if --do_train")
     if os.path.exists(opt.model_dir) and os.listdir(opt.model_dir) and opt.do_train and not opt.overwrite_model_dir:
         raise ValueError("Model directory ({}) already exists and is not empty. Use --overwrite_model_dir to overcome.".format(opt.model_dir))
-    if os.path.exists(opt.eval_dir) and os.listdir(opt.eval_dir):
+    if os.path.exists(opt.eval_dir) and os.listdir(opt.eval_dir) and (opt.do_train or opt.do_pred):
         raise ValueError("Eval directory ({}) already exists and is not empty.".format(opt.eval_dir))
     opt.max_length = opt.max_seq_length
     if opt.encoder_type == 'xlm':
