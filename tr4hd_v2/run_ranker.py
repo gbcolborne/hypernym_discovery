@@ -172,10 +172,11 @@ def predict(opt, model, tokenizer):
     query_inputs = make_test_set(opt, tokenizer, test_data, verbose=True)
 
     # Make dataset for candidate inputs
-    cand_inputs = make_candidate_set(opt, tokenizer, test_data)
+    cand_inputs = make_candidate_set(opt, tokenizer, test_data, verbose=True)
 
     # Get top k candidates and scores
     y_probs = get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs)
+    logger.info("Extracting top {} candidates...".format(RANKING_CUTOFF))
     top_candidates_and_scores = get_top_k_candidates_and_scores(y_probs)
         
     # Write top k candidates and scores
