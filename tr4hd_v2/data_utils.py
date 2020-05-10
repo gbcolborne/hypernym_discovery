@@ -21,8 +21,6 @@ def make_train_set(opt, tokenizer, train_data, verbose=False):
     if opt.nb_neg_samples < 1:
         msg = "nb_neg_samples must be strictly positive"
         raise ValueError(msg)
-    if verbose:
-        logger.info("  Making training set with nb_neg_samples={}".format(opt.nb_neg_samples))
     
     # Load training data
     queries = train_data["queries"]
