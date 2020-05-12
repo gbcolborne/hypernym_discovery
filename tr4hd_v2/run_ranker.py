@@ -331,6 +331,7 @@ def train(opt, model, tokenizer):
     logger.info("  Total optimization steps (one per batch of queries) = %d", total_steps)
     global_step = 0
     training_loss, logging_loss = 0.0, 0.0
+    training_grad_norm, logging_grad_norm = 0.0, 0.0
     train_iterator = trange(int(opt.num_train_epochs), desc="Epoch", disable=opt.local_rank not in [-1, 0])
     set_seed(opt.seed)  
     model.zero_grad()
@@ -381,10 +382,9 @@ def train(opt, model, tokenizer):
                 loss.backward()
 
             # Check norm of grad before clipping
-            norm_w_grad = 0.0
             for _,param in model.named_parameters():
                 if param.grad is not None:
-                    norm_w_grad += torch.norm(param.grad, p=2).item()
+                    training_grad_norm += torch.norm(param.grad, p=2).item()
                 
             # Update
             maybe_clip_grad(opt, model, optimizer)
@@ -407,17 +407,19 @@ def train(opt, model, tokenizer):
                         eval_key = 'eval_{}'.format(key)
                         logs[eval_key] = value
 
-                # Log loss on training set and learning rate
+                # Log loss, gradient norm
                 loss_scalar = (training_loss - logging_loss) / opt.logging_steps
                 logs['train_loss'] = loss_scalar 
                 logging_loss = training_loss
-
+                grad_norm = (training_grad_norm - logging_grad_norm) / opt.logging_steps
+                logs['norm_w_grad'] = grad_norm
+                logging_grad_norm = training_grad_norm
+                
                 # Log magnitude of model weights
                 norm_w = 0.0
                 for _,param in model.named_parameters():
                     norm_w += torch.norm(param.data, p=2).item()
                 logs['norm_w'] = norm_w
-                logs['norm_w_grad'] = norm_w_grad
                 
                 for key, value in logs.items():
                     tb_writer.add_scalar(key, value, global_step)
