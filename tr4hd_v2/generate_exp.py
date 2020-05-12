@@ -13,16 +13,16 @@ base_cmd += " --data_dir ../data/1A_random_split/ --lang en"
 base_cmd += " --encoder_type xlm --encoder_name_or_path ../PretrainedModel_XLM_small_vocab"
 base_cmd += " --do_train --evaluate_during_training"
 base_cmd += " --per_gpu_eval_batch_size 512"
-base_cmd += " --max_steps 40000 --logging_steps 2000 --save_steps 2000 --save_total_limit 1"
+base_cmd += " --max_steps 200000 --logging_steps 5000 --save_steps 5000 --save_total_limit 1"
 
 # Add flags
 base_cmd += " --freeze_query_encoder"
-base_cmd += " --freeze_cand_encoder"
+#base_cmd += " --freeze_cand_encoder"
 base_cmd += " --project_encodings"
-#base_cmd += " --add_eye_to_init"
+base_cmd += " --add_eye_to_init"
 
 # Set prefix for output directories
-output_prefix = "Out1"
+output_prefix = "Out_freezeQ"
 
 # Map short param names to long ones
 param_key_to_name = {"bs":"per_gpu_train_batch_size",
@@ -33,10 +33,10 @@ param_key_to_name = {"bs":"per_gpu_train_batch_size",
 
 # Set param values we want to test
 named_param_values = [("bs", ["16", "32"]),
-                      ("lr", ["1e-5", "5e-6"]),
-                      ("dp", ["0.0", "0.2", "0.4"]),
-                      ("ng", ["8", "16", "32"]),
-                      ("gn", ["-1", "10"])]
+                      ("lr", ["1e-5"]),
+                      ("dp", ["0.2"]),
+                      ("ng", ["16", "32"]),
+                      ("gn", ["10"])]
 
 # Generate all combinations
 settings = [{}]
@@ -51,7 +51,7 @@ for key, values in named_param_values:
     settings = tmp[:]
 
 # Remove specific combinations (e.g. to avoid using too much memory)
-settings = [x for x in settings if not (x["ng"] == 32 and x["bs"] == 32)]
+settings = [x for x in settings if not (x["ng"] == "32" and x["bs"] == "32")]
                       
 # Take a random sample of settings
 MAX_TESTS = 32
