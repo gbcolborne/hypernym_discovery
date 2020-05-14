@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 PAD_TOKEN=0
 SEGMENT_ID=0
 MASK_PADDING_WITH_ZERO=True
-
+SEED=91500
 
 def make_train_set(opt, tokenizer, train_data, verbose=False):
     """ Make labeled dataset for training set. Subsample candidates using negative sampling.
