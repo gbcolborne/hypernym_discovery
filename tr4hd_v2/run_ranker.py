@@ -121,7 +121,7 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
         # Score this batch for all queries
         for query_ix in range(len(query_encs)):
             with torch.no_grad():
-                scores = model({'query_encs': query_encs[query_ix]}, {'cand_encs':cand_encs})
+                scores = model({'query_enc': query_encs[query_ix]}, {'cand_encs':cand_encs})
             scores = scores.detach().cpu().numpy()
             y_probs[query_ix] += scores.tolist()
 
@@ -365,7 +365,7 @@ def train(opt, model, tokenizer):
                 cand_encs = encode_batch(opt, model, tokenizer, cand_batch, grad=True, these_are_candidates=True)
                 
                 # Forward pass
-                scores_sub = model({'query_encs': query_encs[query_ix]}, {'cand_encs':cand_encs}).unsqueeze(0)
+                scores_sub = model({'query_enc': query_encs[query_ix]}, {'cand_encs':cand_encs}).unsqueeze(0)
                 scores.append(scores_sub)
             scores = torch.cat(scores, dim=0)
 
@@ -414,7 +414,7 @@ def train(opt, model, tokenizer):
                 grad_norm = (training_grad_norm - logging_grad_norm) / opt.logging_steps
                 logs['norm_w_grad'] = grad_norm
                 logging_grad_norm = training_grad_norm
-                
+
                 # Log magnitude of model weights
                 norm_w = 0.0
                 for _,param in model.named_parameters():
@@ -500,16 +500,12 @@ def main():
                         help="Batch size (nb queries) per GPU/CPU for training.")
     parser.add_argument("--nb_neg_samples", default=9, type=int, 
                         help=("Nb neg samples per positive example (for training only)."))
+    parser.add_argument("--subsample_positives", action='store_true',
+                        help="Subsample positive examples based on gold hypernyn frequencies")
     parser.add_argument("--freeze_query_encoder", action='store_true',
                         help="Freeze weights of query encoder during training.")
     parser.add_argument("--freeze_cand_encoder", action='store_true',
                         help="Freeze weights of candidate encoder during training.")
-    parser.add_argument("--project_encodings", action='store_true',
-                        help="Pass encodings through projection layer.")
-    parser.add_argument("--relu_after_projection", action='store_true',
-                        help="Pass projected encodings through ReLU.")
-    parser.add_argument("--add_eye_to_init", action='store_true',
-                        help="Add identity matrix to initial weights of projection layers.")
     parser.add_argument("--learning_rate", default=1e-3, type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--dropout_prob", default=0.0, type=float,
@@ -560,15 +556,6 @@ def main():
     opt.max_length = opt.max_seq_length
     if opt.encoder_type == 'xlm':
         opt.max_position_embeddings = opt.max_seq_length
-    if opt.add_eye_to_init:
-        if not opt.project_encodings:
-            msg = "--add_eye_to_init can only be used in combination with --project_encodings"
-            raise ValueError(msg)
-
-    if opt.relu_after_projection:
-        if not opt.project_encodings:
-            msg = "--relu_after_projection can only be used in combination with --project_encodings"
-            raise ValueError(msg)
         
     # Setup distant debugging if needed
     if opt.server_ip and opt.server_port:
@@ -675,10 +662,6 @@ def main():
     if opt.do_eval or opt.do_pred:
         # Load training options
         train_opt = torch.load(os.path.join(opt.model_dir, 'training_args.bin'))
-        
-        # Update options based on training options
-        if train_opt.project_encodings:
-            opt.project_encodings=True
         
         # Load tokenizer
         tokenizer = tokenizer_class.from_pretrained(opt.model_dir, do_lower_case=opt.do_lower_case)
