@@ -8,9 +8,8 @@ logger = logging.getLogger(__name__)
 PAD_TOKEN=0
 SEGMENT_ID=0
 MASK_PADDING_WITH_ZERO=True
-SEED=91500
 
-def make_train_set(opt, tokenizer, train_data, verbose=False):
+def make_train_set(opt, tokenizer, train_data, seed=0, verbose=False):
     """ Make labeled dataset for training set. Subsample candidates using negative sampling.
     Args:
     - opt:
@@ -23,8 +22,8 @@ def make_train_set(opt, tokenizer, train_data, verbose=False):
         raise ValueError(msg)
 
     # Seed RNGs
-    random.seed(SEED)
-    np.random.seed(SEED)
+    random.seed(seed)
+    np.random.seed(seed)
     
     # Load training data
     queries = train_data["queries"]

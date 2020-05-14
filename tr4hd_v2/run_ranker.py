@@ -282,7 +282,7 @@ def train(opt, model, tokenizer):
     opt.train_batch_size = opt.per_gpu_train_batch_size * max(1, opt.n_gpu)
 
     # Make training set
-    train_set = make_train_set(opt, tokenizer, train_data, verbose=True)
+    train_set = make_train_set(opt, tokenizer, train_data, seed=opt.seed, verbose=True)
     train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
     train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
 
@@ -338,7 +338,8 @@ def train(opt, model, tokenizer):
     for epoch in train_iterator:
         if epoch > 0:
             # Reload training set to get fresh negative samples
-            train_set = make_train_set(opt, tokenizer, train_data, verbose=False)
+            new_seed = opt.seed + epoch
+            train_set = make_train_set(opt, tokenizer, train_data, seed=new_seed, verbose=False)
             train_sampler = RandomSampler(train_set) if opt.local_rank == -1 else DistributedSampler(train_set)
             train_dataloader = DataLoader(train_set, sampler=train_sampler, batch_size=opt.train_batch_size)
         epoch_iterator = tqdm(train_dataloader, desc="Step (batch)", leave=False, disable=opt.local_rank not in [-1, 0])
