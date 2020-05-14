@@ -1,4 +1,4 @@
-import glob, os, re, logging, shutil
+import glob, os, re, logging, shutil, math
 import numpy as np
 import torch
 from torch.utils.data import TensorDataset
@@ -21,22 +21,53 @@ def make_train_set(opt, tokenizer, train_data, verbose=False):
     if opt.nb_neg_samples < 1:
         msg = "nb_neg_samples must be strictly positive"
         raise ValueError(msg)
+
+    # Seed RNGs
+    random.seed(SEED)
+    np.random.seed(SEED)
     
     # Load training data
     queries = train_data["queries"]
     gold_cand_ids = train_data["gold_hypernym_candidate_ids"]
+
+    # Subsample positive examples based on gold hypernym frequencies
+    if opt.subsample_positives:
+        hyp_fd = {}
+        for sub in gold_cand_ids:
+            for hyp in sub:
+                if hyp not in hyp_fd:
+                    hyp_fd[hyp] = 0
+                hyp_fd[hyp] += 1
+        min_freq = min(hyp_fd.values())
+        sample_probs = {}
+        for hyp, freq in hyp_fd.values():
+            sample_probs[hyp] = math.sqrt(min_freq/freq)
+        q_tmp = []
+        h_tmp = []
+        for query, hyps in zip(queries, gold_cand_ids):
+            sub = []
+            for hyp in hyps:
+                if random.random() < sample_probs[hyp]:
+                    sub.append(hyp)
+            if len(sub):
+                q_tmp.append(query)
+                h_tmp.append(sub)
+        queries = q_tmp
+        gold_cand_ids = h_tmp
+        
+    # Log some stats
     nb_candidates = len(train_data["candidates"])
     nb_queries = len(queries)
     nb_pos_examples = sum(len(x) for x in gold_cand_ids)
     nb_neg_samples = nb_pos_examples * opt.nb_neg_samples
-
     if verbose:
         logger.info("***** Making training set ******")
         logger.info("  Nb queries: {}".format(nb_queries))
         logger.info("  Nb positive examples: {}".format(nb_pos_examples))
         logger.info("  Nb negative examples: {}".format(nb_neg_samples))
+        logger.info("  Subsample positive examples: %s" % "True" if opt.subsample_positives else "False")
         logger.info("  Max length: {}".format(opt.max_seq_length))
-
+        
     # Sample a bunch of indices at once to save time on generating random candidate indices
     buffer_size = 1000000
     sampled_cand_ids = np.random.randint(nb_candidates, size=buffer_size)

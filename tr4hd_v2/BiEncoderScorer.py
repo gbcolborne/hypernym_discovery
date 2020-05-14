@@ -10,7 +10,8 @@ MODEL_CLASSES = {
     'xlm': XLMModel,
 }
 
-NORMALIZE_ENCODINGS = False
+ADD_EYE_TO_INIT = True
+RELU_AFTER_PROJECTION = FALSE
 
 class BiEncoderScorer(torch.nn.Module):
     """ Bi-encoder scoring module. """
@@ -27,8 +28,9 @@ class BiEncoderScorer(torch.nn.Module):
         # Check args
         if pretrained_encoder is None and encoder_config is None:
             raise ValueError("Either pretrained_encoder or encoder_config must be provided.")
-
-        self.normalize_encodings = NORMALIZE_ENCODINGS
+        self.normalize_encodings = opt.normalize_encodings
+        self.add_eye_to_init = ADD_EYE_TO_INIT
+        self.relu_after_projection = RELU_AFTER_PROJECTION
         
         # Make 2 copies of the pretrained model
         if pretrained_encoder is None:
@@ -56,27 +58,27 @@ class BiEncoderScorer(torch.nn.Module):
         if self.do_dropout:
             self.dropout = torch.nn.Dropout(p=opt.dropout_prob, inplace=False)
                 
-        # Check if we project encodings
-        if opt.project_encodings:
-            self.project_encodings = True
-        else:
-            self.project_encodings = False
-        if opt.relu_after_projection:
-            self.relu_after_projection = True
-        else:
-            self.relu_after_projection = False
-        if self.project_encodings:
-            # Linear layer after encoding
-            self.hidden_dim = self.encoder_q.config.emb_dim
-            self.output_q = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
-            self.output_c = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
-            # Initialize weights properly (Xavier init)
-            self.output_q.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
-            self.output_c.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
-            if opt.add_eye_to_init:
-                self.output_q.weight.data = self.output_q.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
-                self.output_c.weight.data = self.output_c.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
+        # Projection layer 
+        self.hidden_dim = self.encoder_q.config.emb_dim
+        self.projector_q = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
+        self.projector_c = torch.nn.Linear(self.hidden_dim, self.hidden_dim)
+        # Xavier init
+        self.projector_q.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
+        self.projector_c.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
+        if self.add_eye_to_init:
+            self.projector_q.weight.data = self.projector_q.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
+            self.projector_c.weight.data = self.projector_c.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
 
+        # Candidate bias layer
+        self.cand_bias = torch.nn.Linear(in_features=self.hidden_dim, out_features=1, bias=False)
+        # Xavier init
+        self.cand_bias.weight.data = torch.randn(1, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + 1))
+        
+        # Output layer
+        self.output = torch.nn.Linear(in_features=2, out_features=1, bias=True)
+        # Init with ones
+        torch.nn.init.ones_(self.output.weight.data)
+            
         
     def encode_candidates(self, inputs):
         """ Encode candidates.
@@ -88,15 +90,7 @@ class BiEncoderScorer(torch.nn.Module):
         outputs = self.encoder_c(**inputs)
         encs = outputs[0] # The last hidden states are the first element of the tuple
         encs = encs[:,0,:] # Keep only the hidden state of BOS
-        if self.project_encodings:
-            # Apply linear layer
-            out = self.output_c(encs)
-            # ReLU
-            if self.relu_after_projection:
-                out = out.clamp_min(0.)
-            return out
-        else:
-            return encs
+        return encs
 
         
     def encode_queries(self, inputs):
@@ -109,76 +103,61 @@ class BiEncoderScorer(torch.nn.Module):
         outputs = self.encoder_q(**inputs)
         encs = outputs[0] # The last hidden states are the first element of the tuple
         encs = encs[:,0,:] # Keep only the hidden state of BOS
-        if self.project_encodings:
-            # Apply linear layer
-            out = self.output_q(encs)
-            # ReLU
-            if self.relu_after_projection:
-                out = out.clamp_min(0.)
-            return out
-        else:
-            return encs
+        return encs
         
         
-    def score_candidates(self, query_encs, cand_encs):
+    def score_candidates(self, query_enc, cand_encs):
         """
-        Score pairs of query and candidate encodings by taking the dot product. Return 1-D Tensor of scores.
+        Score candidates wrt query by taking the dot product. Return 1-D Tensor of scores.
         Args:
-        - query_encs: Tensor (1D ro 2D) *Note: if both input tensors are 2D, their shapes must match, as we perform a batch dot product on pairs of encodings.
-        - cand_encs: Tensor (1D or 2D) *Note: if both input tensors are 2D, their shapes must match, as we perform a batch dot product on pairs of encodings.
+        - query_enc: Tensor (1D) 
+        - cand_encs: Tensor (2D) 
 
         """
         # Inspect input tensors
-        nb_axes = len(query_encs.size())
-        if nb_axes > 2:
-            raise ValueError("query_encs must be 1-D or 2-D")
-        if nb_axes == 1:
-            query_encs = query_encs.unsqueeze(0)
-        nb_queries, hidden_dim = query_encs.size()
-        nb_axes = len(cand_encs.size())
-        if nb_axes > 2:
-            raise ValueError("cand_encs must be 1-D or 2-D")
-        if nb_axes == 1:
-            cand_encs = cand_encs.unsqueeze(0)
+        if len(query_enc.size()) != 1:
+            raise ValueError("query_enc must be 1-D")
+        hidden_dim = query_enc.size()[0]
+        if len(cand_encs.size()) != 2:
+            raise ValueError("cand_encs must be 2-D")
         nb_cands, cand_hidden_dim = cand_encs.size()
         assert hidden_dim == cand_hidden_dim
-        if nb_queries > 1 and nb_cands > 1:
-            if nb_queries != nb_cands:
-                msg = "nb_queries and nb_cands must match if both tensors are 2D (in this case, we perform a batch dot product on pairs of encodings)"
-                raise ValueError(msg)
 
+        # Project
+        query_enc = query_enc.unsqueeze(0)
+        query_enc = self.projector_q(query_enc)
+        cand_encs = self.projector_c(cand_encs)
+        if self.relu_after_projection:
+            query_enc = query_enc.clamp(min=0)
+            cand_encs = cand_encs.clamp(min=0)
+            
         # Apply dropout 
         if self.do_dropout:
-            query_encs = self.dropout(query_encs)
+            query_enc = self.dropout(query_enc)
             cand_encs = self.dropout(cand_encs)
             
         # Normalize
         if self.normalize_encodings:
-            if nb_queries > 1:
-                query_encs = query_encs / torch.norm(query_encs, p=2, dim=1, keepdim=True)            
-            else:
-                query_encs = query_encs / torch.norm(query_encs, p=2)
-            if nb_cands > 1:
-                cand_encs = cand_encs / torch.norm(cand_encs, p=2, dim=1, keepdim=True)
-            else:
-                cand_encs = cand_encs / torch.norm(cand_encs, p=2)
+            query_enc = query_enc / torch.norm(query_enc, p=2)
+            cand_encs = cand_encs / torch.norm(cand_encs, p=2, dim=1, keepdim=True)
             
         # Compute dot product
-        if nb_cands > 1:
-            if nb_queries > 1:
-                scores = torch.bmm(query_encs.unsqueeze(1), cand_encs.unsqueeze(2)).squeeze(2).squeeze(1)
-            else:
-                scores = torch.matmul(query_encs, cand_encs.permute(1,0)).squeeze(1).squeeze(0)
-        else:
-            scores = torch.matmul(query_encs, cand_encs.permute(1,0)).squeeze(1)
-        return scores
+        dot = torch.matmul(query_enc, cand_encs.permute(1,0)).squeeze(1)
+        
+        # Compute candidate bias
+        cand_bias = self.cand_bias(cand_encs)
+
+        # Compute output logits
+        inputs = torch.cat([dot.T,cand_bias], dim=1)
+        logits = self.output(inputs).squeeze(1)
+        return logits
 
     def forward(self, query_inputs, cand_inputs):
         """ Forward pass from encodings to scores.
         Args:
-        - query_inputs: dict containing query_encs (1-D or 2-D Tensor)
-        - cand_inputs: dict containing cand_encs (1-D or 2-D Tensor)
+        - query_inputs: dict containing query_enc (1-D)
+        - cand_inputs: dict containing cand_encs (2-D)
 
         """
-        return self.score_candidates(query_inputs["query_encs"], cand_inputs["cand_encs"])
+        return self.score_candidates(query_inputs["query_enc"], cand_inputs["cand_encs"])
 
