@@ -11,7 +11,7 @@ MODEL_CLASSES = {
 }
 
 ADD_EYE_TO_INIT = True
-RELU_AFTER_PROJECTION = FALSE
+RELU_AFTER_PROJECTION = False
 
 class BiEncoderScorer(torch.nn.Module):
     """ Bi-encoder scoring module. """

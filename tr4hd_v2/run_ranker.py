@@ -506,7 +506,7 @@ def main():
                         help="Freeze weights of query encoder during training.")
     parser.add_argument("--freeze_cand_encoder", action='store_true',
                         help="Freeze weights of candidate encoder during training.")
-    parser.add_argument("--normalize_encodings", action='store_true'
+    parser.add_argument("--normalize_encodings", action='store_true',
                         help="Normalize query and candidate encodings to unit length.")
     parser.add_argument("--learning_rate", default=1e-3, type=float,
                         help="The initial learning rate for Adam.")
