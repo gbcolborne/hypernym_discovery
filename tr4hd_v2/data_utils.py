@@ -40,7 +40,7 @@ def make_train_set(opt, tokenizer, train_data, verbose=False):
                 hyp_fd[hyp] += 1
         min_freq = min(hyp_fd.values())
         sample_probs = {}
-        for hyp, freq in hyp_fd.values():
+        for hyp, freq in hyp_fd.items():
             sample_probs[hyp] = math.sqrt(min_freq/freq)
         q_tmp = []
         h_tmp = []
