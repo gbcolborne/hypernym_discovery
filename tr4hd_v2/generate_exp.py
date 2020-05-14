@@ -18,7 +18,8 @@ base_cmd += " --max_steps 200000 --logging_steps 5000 --save_steps 5000 --save_t
 # Add flags
 #base_cmd += " --freeze_query_encoder"
 #base_cmd += " --freeze_cand_encoder"
-base_cmd += " --normalize_encodings"
+#base_cmd += " --normalize_encodings"
+base_cmd += " --subsample_positives"
 
 # Set prefix for output directories
 output_prefix = "Out1"
