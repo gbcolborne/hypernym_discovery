@@ -16,13 +16,12 @@ base_cmd += " --per_gpu_eval_batch_size 512"
 base_cmd += " --max_steps 200000 --logging_steps 5000 --save_steps 5000 --save_total_limit 1"
 
 # Add flags
-base_cmd += " --freeze_query_encoder"
+#base_cmd += " --freeze_query_encoder"
 #base_cmd += " --freeze_cand_encoder"
-base_cmd += " --project_encodings"
-base_cmd += " --add_eye_to_init"
+base_cmd += " --normalize_encodings"
 
 # Set prefix for output directories
-output_prefix = "Out_freezeQ"
+output_prefix = "Out1"
 
 # Map short param names to long ones
 param_key_to_name = {"bs":"per_gpu_train_batch_size",
@@ -32,10 +31,10 @@ param_key_to_name = {"bs":"per_gpu_train_batch_size",
                      "gn":"max_grad_norm"}
 
 # Set param values we want to test
-named_param_values = [("bs", ["16", "32"]),
+named_param_values = [("bs", ["16"]),
                       ("lr", ["1e-5"]),
                       ("dp", ["0.2"]),
-                      ("ng", ["16", "32"]),
+                      ("ng", ["10"]),
                       ("gn", ["10"])]
 
 # Generate all combinations
