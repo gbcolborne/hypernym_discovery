@@ -30,7 +30,8 @@ def make_train_set(opt, tokenizer, train_data, seed=0, verbose=False):
     gold_cand_ids = train_data["gold_hypernym_candidate_ids"]
 
     # Subsample positive examples based on gold hypernym frequencies
-    if opt.subsample_positives:
+    if opt.pos_subsampling_factor > 0.0:
+        # Compute hypernym frequencies
         hyp_fd = {}
         for sub in gold_cand_ids:
             for hyp in sub:
@@ -38,9 +39,11 @@ def make_train_set(opt, tokenizer, train_data, seed=0, verbose=False):
                     hyp_fd[hyp] = 0
                 hyp_fd[hyp] += 1
         min_freq = min(hyp_fd.values())
+        # Compute sampling probabilities
         sample_probs = {}
         for hyp, freq in hyp_fd.items():
-            sample_probs[hyp] = math.sqrt(min_freq/freq)
+            sample_probs[hyp] = opt.pos_subsampling_factor / (freq - min_freq + 1) + 1 - opt.pos_subsampling_factor
+        # Apply subsampling
         q_tmp = []
         h_tmp = []
         for query, hyps in zip(queries, gold_cand_ids):
@@ -61,10 +64,10 @@ def make_train_set(opt, tokenizer, train_data, seed=0, verbose=False):
     nb_neg_samples = nb_pos_examples * opt.nb_neg_samples
     if verbose:
         logger.info("***** Making training set ******")
+        logger.info("  Positive example subsampling factor: {}".format(opt.pos_subsampling_factor))        
+        logger.info("  Nb positive examples kept: {}".format(nb_pos_examples))
+        logger.info("  Nb negative examples sampled: {}".format(nb_neg_samples))
         logger.info("  Nb queries: {}".format(nb_queries))
-        logger.info("  Nb positive examples: {}".format(nb_pos_examples))
-        logger.info("  Nb negative examples: {}".format(nb_neg_samples))
-        logger.info("  Subsample positive examples: %s" % "True" if opt.subsample_positives else "False")
         logger.info("  Max length: {}".format(opt.max_seq_length))
         
     # Sample a bunch of indices at once to save time on generating random candidate indices

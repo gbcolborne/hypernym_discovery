@@ -501,8 +501,8 @@ def main():
                         help="Batch size (nb queries) per GPU/CPU for training.")
     parser.add_argument("--nb_neg_samples", default=9, type=int, 
                         help=("Nb neg samples per positive example (for training only)."))
-    parser.add_argument("--subsample_positives", action='store_true',
-                        help="Subsample positive examples based on gold hypernyn frequencies")
+    parser.add_argument("--pos_subsampling_factor", type=float, default=0.0,
+                        help="Real number between 0 and 1 that controls how agressively we subsample positive examples")
     parser.add_argument("--freeze_query_encoder", action='store_true',
                         help="Freeze weights of query encoder during training.")
     parser.add_argument("--freeze_cand_encoder", action='store_true',
@@ -547,8 +547,11 @@ def main():
     opt = parser.parse_args()
 
     # Check args
+    assert opt.do_train or opt.do_eval or opt.do_pred
     assert opt.logging_steps != 0
     assert opt.save_steps != 0
+    assert opt.pos_subsampling_factor >= 0.0
+    assert opt.pos_subsampling_factor <= 1.0
     if opt.do_train:
         if opt.encoder_name_or_path is None:
             raise ValueError("--encoder_name_or_path must be specified if --do_train")
@@ -559,7 +562,6 @@ def main():
     opt.max_length = opt.max_seq_length
     if opt.encoder_type == 'xlm':
         opt.max_position_embeddings = opt.max_seq_length
-        
     # Setup distant debugging if needed
     if opt.server_ip and opt.server_port:
         # Distant debugging - see https://code.visualstudio.com/docs/python/debugging#_attach-to-a-local-script
