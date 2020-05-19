@@ -28,7 +28,6 @@ class BiEncoderScorer(torch.nn.Module):
         # Check args
         if pretrained_encoder is None and encoder_config is None:
             raise ValueError("Either pretrained_encoder or encoder_config must be provided.")
-        self.normalize_encodings = opt.normalize_encodings
         self.add_eye_to_init = ADD_EYE_TO_INIT
         self.relu_after_projection = RELU_AFTER_PROJECTION
         
@@ -135,11 +134,6 @@ class BiEncoderScorer(torch.nn.Module):
         if self.do_dropout:
             query_enc = self.dropout(query_enc)
             cand_encs = self.dropout(cand_encs)
-            
-        # Normalize
-        if self.normalize_encodings:
-            query_enc = query_enc / torch.norm(query_enc, p=2)
-            cand_encs = cand_encs / torch.norm(cand_encs, p=2, dim=1, keepdim=True)
             
         # Compute dot product
         dot = torch.matmul(query_enc, cand_encs.permute(1,0)).squeeze(1)

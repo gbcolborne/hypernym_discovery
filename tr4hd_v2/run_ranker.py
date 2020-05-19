@@ -199,7 +199,7 @@ def predict(opt, model, tokenizer):
     return
 
 
-def compute_loss(logits, targets, reduction=None):
+def compute_loss(opt, logits, targets, reduction=None):
     assert len(logits.size()) == 2
     assert len(targets.size()) == 1
     y_pred = F.log_softmax(logits, dim=-1)
@@ -358,23 +358,37 @@ def train(opt, model, tokenizer):
 
             # Loop over queries
             scores = []
+            cand_norm_diffs = []
             for query_ix in range(bs):
                 # Encode the candidates for this query
                 cand_input_ids_sub = cand_input_ids[cand_ids[query_ix]]
                 cand_nb_tokens_sub = cand_nb_tokens[cand_ids[query_ix]]
                 cand_batch = (cand_input_ids_sub, cand_nb_tokens_sub)
                 cand_encs = encode_batch(opt, model, tokenizer, cand_batch, grad=True, these_are_candidates=True)
-                
+
+                # Store distance between norm and unit length
+                if opt.normalization_penalty > 0.0:
+                    diff = torch.norm(cand_encs, p=2, dim=1, keepdim=False) - 1
+                    squared_diff = diff ** 2
+                    cand_norm_diffs.append(squared_diff)
+                    
                 # Forward pass
                 scores_sub = model({'query_enc': query_encs[query_ix]}, {'cand_encs':cand_encs}).unsqueeze(0)
                 scores.append(scores_sub)
-            scores = torch.cat(scores, dim=0)
 
             # Compute loss
-            loss = compute_loss(scores, labels, reduction='mean')
+            scores = torch.cat(scores, dim=0)
+            loss = compute_loss(opt, scores, labels, reduction='mean')
             if opt.n_gpu > 1:
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
 
+            # Add penalty based on distance between encodings and unit length
+            if opt.normalization_penalty > 0.0:
+                c_diff = torch.sum(torch.cat(cand_norm_diffs)) / bs / opt.nb_neg_samples
+                q_diff = torch.sum((torch.norm(query_encs, p=2, dim=1, keepdim=False)-1)**2) / bs
+                penalty = opt.normalization_penalty * (c_diff + q_diff)
+                loss = loss + penalty
+                
             # Backprop
             if opt.fp16:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
@@ -499,7 +513,7 @@ def main():
                         help="Batch size (nb queries) per GPU/CPU for evaluation.")
     parser.add_argument("--per_gpu_train_batch_size", default=32, type=int,
                         help="Batch size (nb queries) per GPU/CPU for training.")
-    parser.add_argument("--nb_neg_samples", default=9, type=int, 
+    parser.add_argument("--nb_neg_samples", default=10, type=int, 
                         help=("Nb neg samples per positive example (for training only)."))
     parser.add_argument("--pos_subsampling_factor", type=float, default=0.0,
                         help="Real number between 0 and 1 that controls how agressively we subsample positive examples")
@@ -507,8 +521,8 @@ def main():
                         help="Freeze weights of query encoder during training.")
     parser.add_argument("--freeze_cand_encoder", action='store_true',
                         help="Freeze weights of candidate encoder during training.")
-    parser.add_argument("--normalize_encodings", action='store_true',
-                        help="Normalize query and candidate encodings to unit length.")
+    parser.add_argument("--normalization_penalty", type=float, default=0.0,
+                        help="Coefficient of penalty on distance between encodings and unit length")
     parser.add_argument("--learning_rate", default=1e-3, type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--dropout_prob", default=0.0, type=float,
