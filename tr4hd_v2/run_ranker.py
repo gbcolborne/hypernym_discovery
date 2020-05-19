@@ -35,6 +35,20 @@ MODEL_CLASSES = {
 
 RANKING_CUTOFF = 15
 
+def load_model_and_tokenizer(opt, encoder_config, tokenizer_class):
+    # Load training options
+    train_opt = torch.load(os.path.join(opt.model_dir, 'training_args.bin'))
+    
+    # Load tokenizer
+    tokenizer = tokenizer_class.from_pretrained(opt.model_dir, do_lower_case=opt.do_lower_case)
+    
+    # Load model
+    model = BiEncoderScorer(opt, pretrained_encoder=None, encoder_config=encoder_config)
+    model.load_state_dict(torch.load(os.path.join(opt.model_dir, 'state_dict.pt')))
+    model.to(opt.device)
+    return model, tokenizer
+
+
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -555,9 +569,13 @@ def main():
     assert opt.normalization_factor >= 0.0
     assert opt.normalization_factor <= 1.0    
     if opt.do_train:
+        if opt.encoder_name_or_path is None and opt.model_dir is None:
+            raise ValueError("Either --encoder_name_or_path or model_dir must be specified if --do_train")
         if opt.encoder_name_or_path is None:
-            raise ValueError("--encoder_name_or_path must be specified if --do_train")
-    if os.path.exists(opt.model_dir) and os.listdir(opt.model_dir) and opt.do_train and not opt.overwrite_model_dir:
+            path = os.path.join(opt.model_dir, 'state_dict.pt')
+            if not os.path.exists(path):
+                raise ValueError("--model_dir must contain a model if --encoder_name_or_path is not specified")
+    if os.path.exists(opt.model_dir) and os.listdir(opt.model_dir) and opt.do_train and opt.encoder_name_or_path is not None and not opt.overwrite_model_dir:
         raise ValueError("Model directory ({}) already exists and is not empty. Use --overwrite_model_dir to overcome.".format(opt.model_dir))
     if (opt.do_train or opt.do_pred) and os.path.exists(opt.eval_dir) and os.listdir(opt.eval_dir):
         raise ValueError("Eval directory ({}) already exists and is not empty.".format(opt.eval_dir))
@@ -611,10 +629,10 @@ def main():
     config_class, model_class, tokenizer_class = MODEL_CLASSES[opt.encoder_type]
     if opt.encoder_config_name: 
         name_or_path = opt.encoder_config_name
-    elif opt.do_train:
+    elif opt.do_train and opt.encoder_name_or_path is not None:
         name_or_path = opt.encoder_name_or_path
     else:
-        # If we don't train, --encoder_name_or_path is optional, so assume encoder config is in --model_dir
+        # If we don't train and --encoder_name_or_path is not specified, we assume encoder config is in --model_dir
         name_or_path = opt.model_dir
     config = config_class.from_pretrained(name_or_path,
                                           num_labels=num_labels,
@@ -627,31 +645,33 @@ def main():
         if not os.path.exists(opt.model_dir) and opt.local_rank in [-1, 0]:
             os.makedirs(opt.model_dir)
 
-            
-        # Make sure only the first process in distributed training will download model 
-        if opt.local_rank not in [-1, 0]:
-            torch.distributed.barrier()  
+        if opt.encoder_name_or_path is None:
+            # Load previously trained model
+            model, tokenizer = load_model_and_tokenizer(opt, config, tokenizer_class)
+        else: 
+            # Make sure only the first process in distributed training will download model 
+            if opt.local_rank not in [-1, 0]:
+                torch.distributed.barrier()  
 
-        # Load pretrained encoder and tokenizer
-        tokenizer = tokenizer_class.from_pretrained(opt.tokenizer_name if opt.tokenizer_name else opt.encoder_name_or_path,
-                                                    do_lower_case=opt.do_lower_case,
-                                                    cache_dir=opt.encoder_cache_dir if opt.encoder_cache_dir else None)
-        pretrained_encoder = model_class.from_pretrained(opt.encoder_name_or_path,
-                                                         from_tf=bool('.ckpt' in opt.encoder_name_or_path),
-                                                         config=config,
-                                                         cache_dir=opt.encoder_cache_dir if opt.encoder_cache_dir else None)
-        logger.info(config)
+            # Load pretrained encoder and tokenizer
+            tokenizer = tokenizer_class.from_pretrained(opt.tokenizer_name if opt.tokenizer_name else opt.encoder_name_or_path,
+                                                        do_lower_case=opt.do_lower_case,
+                                                        cache_dir=opt.encoder_cache_dir if opt.encoder_cache_dir else None)
+            pretrained_encoder = model_class.from_pretrained(opt.encoder_name_or_path,
+                                                             from_tf=bool('.ckpt' in opt.encoder_name_or_path),
+                                                             config=config,
+                                                             cache_dir=opt.encoder_cache_dir if opt.encoder_cache_dir else None)
 
-        # Save config in model directory
-        config.save_pretrained(opt.model_dir)
+            # Save config in model directory
+            config.save_pretrained(opt.model_dir)
         
-        # End of barrier
-        if opt.local_rank == 0:
-            torch.distributed.barrier()  
-
-        # Initialize model
-        model = BiEncoderScorer(opt, pretrained_encoder=pretrained_encoder)
-        model.to(opt.device)
+            # End of barrier
+            if opt.local_rank == 0:
+                torch.distributed.barrier()  
+        
+            # Initialize model
+            model = BiEncoderScorer(opt, pretrained_encoder=pretrained_encoder)
+            model.to(opt.device)
 
         # Run training loop
         logger.info("  Training/evaluation parameters %s", opt)
@@ -667,17 +687,8 @@ def main():
             torch.save(opt, os.path.join(opt.model_dir, 'training_args.bin'))
 
     if opt.do_eval or opt.do_pred:
-        # Load training options
-        train_opt = torch.load(os.path.join(opt.model_dir, 'training_args.bin'))
+        model, tokenizer = load_model_and_tokenizer(opt, config, tokenizer_class)
         
-        # Load tokenizer
-        tokenizer = tokenizer_class.from_pretrained(opt.model_dir, do_lower_case=opt.do_lower_case)
-
-        # Load model
-        model = BiEncoderScorer(opt, pretrained_encoder=None, encoder_config=config)
-        model.load_state_dict(torch.load(os.path.join(opt.model_dir, 'state_dict.pt')))
-        model.to(opt.device)
-
     # Evaluation on dev set
     if opt.do_eval and opt.local_rank in [-1, 0]:
         # Make dev set
