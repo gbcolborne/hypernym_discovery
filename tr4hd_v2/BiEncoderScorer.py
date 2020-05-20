@@ -70,16 +70,6 @@ class BiEncoderScorer(torch.nn.Module):
             self.projector_q.weight.data = self.projector_q.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
             self.projector_c.weight.data = self.projector_c.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
 
-        # Candidate bias layer
-        self.cand_bias = torch.nn.Linear(in_features=self.hidden_dim, out_features=1, bias=False)
-        # Xavier init
-        self.cand_bias.weight.data = torch.randn(1, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + 1))
-        
-        # Output layer
-        self.output = torch.nn.Linear(in_features=2, out_features=1, bias=True)
-        # Init with ones
-        torch.nn.init.ones_(self.output.weight.data)
-            
         
     def encode_candidates(self, inputs):
         """ Encode candidates.
@@ -143,14 +133,7 @@ class BiEncoderScorer(torch.nn.Module):
             cand_encs = cand_encs / ((1-self.normalization_factor) * torch.norm(cand_encs, p=2, dim=1, keepdim=True) + self.normalization_factor)
             
         # Compute dot product
-        dot = torch.matmul(query_enc, cand_encs.permute(1,0)).squeeze(1)
-        
-        # Compute candidate bias
-        cand_bias = self.cand_bias(cand_encs)
-
-        # Compute output logits
-        inputs = torch.cat([dot.T,cand_bias], dim=1)
-        logits = self.output(inputs).squeeze(1)
+        logits = torch.matmul(query_enc, cand_encs.permute(1,0)).squeeze(1)
         return logits
 
     def forward(self, query_inputs, cand_inputs):
