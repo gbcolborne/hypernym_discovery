@@ -131,9 +131,9 @@ class BiEncoderScorer(torch.nn.Module):
         if self.normalization_factor > 0.0:
             query_enc = query_enc / ((1-self.normalization_factor) * torch.norm(query_enc, p=2) + self.normalization_factor)
             cand_encs = cand_encs / ((1-self.normalization_factor) * torch.norm(cand_encs, p=2, dim=1, keepdim=True) + self.normalization_factor)
-            
+
         # Compute dot product
-        logits = torch.matmul(query_enc, cand_encs.permute(1,0)).squeeze(1)
+        logits = torch.matmul(query_enc, cand_encs.permute(1,0)).squeeze(0)
         return logits
 
     def forward(self, query_inputs, cand_inputs):
