@@ -32,7 +32,7 @@ param_key_to_name = {"bs":"per_gpu_train_batch_size",
                      "nf":"normalization_factor"}
 
 # Set param values we want to test
-named_param_values = {"bs": ["16"],
+named_param_values = {"bs": ["32"],
                       "lr": ["1e-5"],
                       "dp": ["0.2"],
                       "ng": ["10"],
