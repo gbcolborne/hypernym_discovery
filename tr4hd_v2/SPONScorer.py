@@ -135,11 +135,15 @@ class SPONScorer(torch.nn.Module):
             raise ValueError("Expected a 1-D tensor (or 2-D with a singleton dimension)")
         if nb_axes == 2 and dim is None:
             raise ValueError("dim along which we normalize must be specified if input tensor is 2-D")
-        exp = torch.exp(logits)
+        # Exponentiate and normalize, using a trick based on shift invariance (i.e. subtracting the max value) to avoid numerical overflow
         if nb_axes == 1:
+            max_logit = torch.max(logits)
+            exp = torch.exp(logits - max_logit)
             sum_exp = torch.sum(exp)
             return exp / sum_exp
         else:
+            dimwise_max_vals, _ = torch.max(logits, dim=dim, keepdim=True)
+            exp = torch.exp(logits - dimwise_max_vals)
             sum_exp = torch.sum(exp, dim=dim, keepdim=True)
             return exp / sum_exp
 
