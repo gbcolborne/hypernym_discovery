@@ -38,8 +38,8 @@ named_param_values = {"bs": ["32"],
                       "ng": ["10"],
                       "gn": ["10"],
                       "ss": ["0.0"],
-                      "nf": ["0.0"]
-                      "ol": ["base", "projection", "highway"}
+                      "nf": ["0.0"],
+                      "ol": ["base", "projection", "highway"]}
 
 # Generate all combinations
 settings = [{}]

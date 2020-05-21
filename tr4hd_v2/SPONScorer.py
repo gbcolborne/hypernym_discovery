@@ -29,7 +29,6 @@ class SPONScorer(torch.nn.Module):
             raise ValueError("Either pretrained_encoder or encoder_config must be provided.")
         self.normalization_factor = opt.normalization_factor
         self.epsilon = torch.tensor(opt.spon_epsilon, dtype=torch.float32)
-        self.zero = torch.tensor(0, dtype=torch.float32)
         
         # Make 2 copies of the pretrained model
         if pretrained_encoder is None:
@@ -58,7 +57,7 @@ class SPONScorer(torch.nn.Module):
             bias_data = torch.randn(self.hidden_dim) * math.sqrt(6./self.hidden_dim)
             self.projector_weights = torch.nn.Parameter(weight_data)
             self.projector_bias = torch.nn.Parameter(bias_data)
-        elif self.output_layer_type == 'projection'
+        elif self.output_layer_type == 'projection':
             self.projector = torch.nn.Linear(self.hidden_dim, self.hidden_dim, bias=True)
             self.projector.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
         elif self.output_layer_type == 'highway':
@@ -121,19 +120,28 @@ class SPONScorer(torch.nn.Module):
             query_enc = (gate * proj) + ((1-gate) * query_enc)
 
         # Compute distance from satisfaction
-        logits = torch.sum(torch.max(query_enc - cand_encs + self.epsilon, self.zero))
+        logits = torch.sum(torch.clamp(query_enc - cand_encs + self.epsilon, min=0), dim=1)
         return logits
 
     
-    def logits_to_probs(self, logits):
+    def logits_to_probs(self, logits, dim=None):
         """ Convert logits (aka distance to satisfaction scores) for a single query to probabilities. 
         Args:
         - logits: tensor of logits for a single query
 
         """
-        exp =  torch.exp(logits)
-        sum_exp = torch.sum(exp)
-        return exp / sum_exp
+        nb_axes = len(logits.size())
+        if nb_axes == 0 or nb_axes > 2:
+            raise ValueError("Expected a 1-D tensor (or 2-D with a singleton dimension)")
+        if nb_axes == 2 and dim is None:
+            raise ValueError("dim along which we normalize must be specified if input tensor is 2-D")
+        exp = torch.exp(logits)
+        if nb_axes == 1:
+            sum_exp = torch.sum(exp)
+            return exp / sum_exp
+        else:
+            sum_exp = torch.sum(exp, dim=dim, keepdim=True)
+            return exp / sum_exp
 
     
     def forward(self, query_inputs, cand_inputs, convert_logits_to_probs=False):
@@ -145,7 +153,7 @@ class SPONScorer(torch.nn.Module):
         """
         logits = self.compute_distance_to_satisfaction(query_inputs["query_enc"], cand_inputs["cand_encs"])
         if convert_logits_to_probs:
-            return logits_to_probs(logits)
+            return self.logits_to_probs(logits)
         else:
             return logits
 

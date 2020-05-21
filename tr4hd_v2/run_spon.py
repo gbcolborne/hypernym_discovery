@@ -22,7 +22,7 @@ from transformers import XLMConfig, XLMModel, XLMTokenizer
 from transformers import AdamW
 from sklearn.metrics import average_precision_score
 from data_utils import make_train_set, make_dev_set, make_test_set, make_candidate_set, load_hd_data, rotate_checkpoints, get_missing_inputs
-from BiEncoderScorer import BiEncoderScorer
+from SPONScorer import SPONScorer
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ MODEL_CLASSES = {
 
 RANKING_CUTOFF = 15
 
+
 def load_model_and_tokenizer(opt, encoder_config, tokenizer_class):
     # Load training options
     train_opt = torch.load(os.path.join(opt.model_dir, 'training_args.bin'))
@@ -43,7 +44,7 @@ def load_model_and_tokenizer(opt, encoder_config, tokenizer_class):
     tokenizer = tokenizer_class.from_pretrained(opt.model_dir, do_lower_case=opt.do_lower_case)
     
     # Load model
-    model = BiEncoderScorer(opt, pretrained_encoder=None, encoder_config=encoder_config)
+    model = SPONScorer(opt, pretrained_encoder=None, encoder_config=encoder_config)
     model.load_state_dict(torch.load(os.path.join(opt.model_dir, 'state_dict.pt')))
     model.to(opt.device)
     return model, tokenizer
@@ -56,7 +57,7 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
     
-def encode_batch(opt, model, tokenizer, batch, grad=False, these_are_candidates=False):
+def encode_batch(opt, model, tokenizer, batch, grad=False):
     """ Encode batch of queries or candidates. 
     Args:
     - opt
@@ -72,10 +73,10 @@ def encode_batch(opt, model, tokenizer, batch, grad=False, these_are_candidates=
     inputs = {'input_ids':input_ids}
     inputs.update(get_missing_inputs(opt, input_ids, nb_tokens, tokenizer.lang2id[opt.lang]))
     if grad:
-        encs = model.encode_candidates(inputs) if these_are_candidates else model.encode_queries(inputs)
+        encs = model.encode(inputs) 
     else:
         with torch.no_grad():
-            encs = model.encode_candidates(inputs) if these_are_candidates else model.encode_queries(inputs)
+            encs = model.encode(inputs) 
     return encs
 
 
@@ -92,7 +93,7 @@ def encode_all_inputs(opt, model, tokenizer, inputs, grad=False, these_are_candi
     dataloader = DataLoader(inputs, sampler=sampler, batch_size=batch_size)
     all_encs = []
     for batch in tqdm(dataloader, desc="Encoding {}".format("candidates" if these_are_candidates else "queries"), leave=False):
-        encs = encode_batch(opt, model, tokenizer, batch, grad=grad, these_are_candidates=these_are_candidates)
+        encs = encode_batch(opt, model, tokenizer, batch, grad=grad)
         all_encs.append(encs)
     all_encs = torch.cat(all_encs)
     return all_encs
@@ -125,29 +126,25 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
     dataloader = DataLoader(cand_inputs, sampler=sampler, batch_size=opt.eval_batch_size)
 
     # Score all candidates for each query
-    y_probs = [list() for _ in range(len(query_encs))]
+    all_scores = [list() for _ in range(len(query_encs))]
     model.eval()
     batch_start = 0
     for batch in tqdm(dataloader, desc="Predicting", leave=False):
         # Encode batch of candidates
-        cand_encs = encode_batch(opt, model, tokenizer, batch, grad=False, these_are_candidates=True)
+        cand_encs = encode_batch(opt, model, tokenizer, batch, grad=False)
         batch_size = len(cand_encs)
         # Score this batch for all queries
         for query_ix in range(len(query_encs)):
             with torch.no_grad():
-                scores = model({'query_enc': query_encs[query_ix]}, {'cand_encs':cand_encs})
+                scores = model({'query_enc': query_encs[query_ix]}, {'cand_encs':cand_encs}, convert_logits_to_probs=False)
             scores = scores.detach().cpu().numpy()
-            y_probs[query_ix] += scores.tolist()
-
-    # Softmax
-    y_probs = [np.exp(log_softmax(x)) for x in y_probs]
-    return np.asarray(y_probs, dtype=np.float32)
-
-
-def log_softmax(x):
-    """ numerically stable log(softmax) in numpy """
-    e_x = np.exp(x - np.max(x))
-    return np.log(e_x / e_x.sum())
+            all_scores[query_ix] += scores.tolist()
+            
+    # Convert logits to probabilities
+    all_scores = torch.tensor(all_scores, dtype=torch.float32)
+    y_probs = model.logits_to_probs(all_scores, dim=1)
+    y_probs = y_probs.detach().cpu().numpy()
+    return y_probs
 
 
 def get_top_k_candidates_and_scores(scores):
@@ -213,11 +210,12 @@ def predict(opt, model, tokenizer):
     return
 
 
-def compute_loss(logits, targets, reduction=None):
-    assert len(logits.size()) == 2
+def compute_loss(y_probs, targets, reduction=None):
+    assert len(y_probs.size()) == 2
     assert len(targets.size()) == 1
-    y_pred = F.log_softmax(logits, dim=-1)
-    loss = F.nll_loss(y_pred, targets)
+    assert targets.size()[0] == y_probs.size()[0]
+    target_probs = y_probs[:,targets]
+    loss = -torch.sum(torch.log(target_probs))
     return loss
 
 
@@ -368,7 +366,7 @@ def train(opt, model, tokenizer):
             # Encode queries
             model.train()
             query_batch = (query_input_ids, query_nb_tokens)
-            query_encs = encode_batch(opt, model, tokenizer, query_batch, grad=True, these_are_candidates=False)
+            query_encs = encode_batch(opt, model, tokenizer, query_batch, grad=True)
 
             # Loop over queries
             scores = []
@@ -377,11 +375,11 @@ def train(opt, model, tokenizer):
                 cand_input_ids_sub = cand_input_ids[cand_ids[query_ix]]
                 cand_nb_tokens_sub = cand_nb_tokens[cand_ids[query_ix]]
                 cand_batch = (cand_input_ids_sub, cand_nb_tokens_sub)
-                cand_encs = encode_batch(opt, model, tokenizer, cand_batch, grad=True, these_are_candidates=True)
+                cand_encs = encode_batch(opt, model, tokenizer, cand_batch, grad=True)
 
                 # Forward pass
-                scores_sub = model({'query_enc': query_encs[query_ix]}, {'cand_encs':cand_encs}).unsqueeze(0)
-                scores.append(scores_sub)
+                scores_sub = model({'query_enc': query_encs[query_ix]}, {'cand_encs':cand_encs}, convert_logits_to_probs=True)
+                scores.append(scores_sub.unsqueeze(0))
 
             # Compute loss
             scores = torch.cat(scores, dim=0)
@@ -673,7 +671,7 @@ def main():
                 torch.distributed.barrier()  
         
             # Initialize model
-            model = BiEncoderScorer(opt, pretrained_encoder=pretrained_encoder)
+            model = SPONScorer(opt, pretrained_encoder=pretrained_encoder)
             model.to(opt.device)
 
         # Run training loop
