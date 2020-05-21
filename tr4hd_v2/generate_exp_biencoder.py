@@ -20,7 +20,7 @@ base_cmd += " --max_steps 200000 --logging_steps 5000 --save_steps 5000 --save_t
 #base_cmd += " --freeze_cand_encoder"
 
 # Set prefix for output directories
-output_prefix = "Out1"
+output_prefix = "Out_Biencoder_1"
 
 # Map short param names to long ones
 param_key_to_name = {"bs":"per_gpu_train_batch_size",
