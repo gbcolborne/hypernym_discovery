@@ -3,14 +3,13 @@
 import math
 from copy import deepcopy
 import torch
+import torch.nn.functional as F
 from transformers import XLMModel, BertModel
 
 MODEL_CLASSES = {
     'bert': BertModel,
     'xlm': XLMModel,
 }
-
-ADD_EYE_TO_INIT = True
 
 class SPONScorer(torch.nn.Module):
     """ SPON scoring module. """
@@ -25,8 +24,6 @@ class SPONScorer(torch.nn.Module):
         """
         
         super(SPONScorer, self).__init__()
-        self.add_eye_to_init = ADD_EYE_TO_INIT
-
         # Check args
         if pretrained_encoder is None and encoder_config is None:
             raise ValueError("Either pretrained_encoder or encoder_config must be provided.")
@@ -53,24 +50,27 @@ class SPONScorer(torch.nn.Module):
         if self.do_dropout:
             self.dropout = torch.nn.Dropout(p=opt.dropout_prob, inplace=False)
                 
-        # Query projection layer 
+        # Query transformation layer 
         self.hidden_dim = self.encoder.config.emb_dim
-        self.use_projection_matrix = opt.use_projection_matrix
-        if self.use_projection_matrix:
-            self.projector = torch.nn.Linear(self.hidden_dim, self.hidden_dim, bias=True)
-            # Xavier init
-            self.projector.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
-            if self.add_eye_to_init:
-                self.projector.weight.data = self.projector.weight.data + torch.eye(self.hidden_dim, self.hidden_dim)
-        else:
+        self.output_layer_type = opt.output_layer_type
+        if self.output_layer_type == 'base':
             weight_data = torch.randn(self.hidden_dim) * math.sqrt(6./self.hidden_dim)
             bias_data = torch.randn(self.hidden_dim) * math.sqrt(6./self.hidden_dim)
             self.projector_weights = torch.nn.Parameter(weight_data)
             self.projector_bias = torch.nn.Parameter(bias_data)
+        elif self.output_layer_type == 'projection'
+            self.projector = torch.nn.Linear(self.hidden_dim, self.hidden_dim, bias=True)
+            self.projector.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
+        elif self.output_layer_type == 'highway':
+            self.projector = torch.nn.Linear(self.hidden_dim, self.hidden_dim, bias=True)
+            self.proj_gate = torch.nn.Linear(self.hidden_dim, self.hidden_dim, bias=True)
+            self.projector.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
+            self.proj_gate.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
+            self.proj_gate.bias.data.fill_(-2.0)
+
             
-        
     def encode(self, inputs):
-        """ Encode candidates.
+        """ Encode strings (either queries or candidates).
         Args:
         - inputs: dict containing input_ids, attention_mask, token_type_ids, langs
 
@@ -82,7 +82,7 @@ class SPONScorer(torch.nn.Module):
         return encs
 
         
-    def score_candidates(self, query_enc, cand_encs):
+    def compute_distance_to_satisfaction(self, query_enc, cand_encs):
         """
         Score candidates wrt query. Return 1-D Tensor of scores.
         Args:
@@ -99,33 +99,54 @@ class SPONScorer(torch.nn.Module):
         nb_cands, cand_hidden_dim = cand_encs.size()
         assert hidden_dim == cand_hidden_dim
 
+        # Soft length normalization
+        if self.normalization_factor > 0.0:
+            query_enc = query_enc / ((1-self.normalization_factor) * torch.norm(query_enc, p=2) + self.normalization_factor)
+            cand_encs = cand_encs / ((1-self.normalization_factor) * torch.norm(cand_encs, p=2, dim=1, keepdim=True) + self.normalization_factor)
+        
         # Apply dropout
-        query_enc = query_enc.unsqueeze(0)        
         if self.do_dropout:
             query_enc = self.dropout(query_enc)
             cand_encs = self.dropout(cand_encs)
 
         # Project query
-        if self.use_projection_matrix:
-            query_enc = self.projector(self.query_enc)
-        else:
-            query_enc = query_enc * self.projector_weights + self.projector_bias
-
-        # Soft length normalization
-        if self.normalization_factor > 0.0:
-            query_enc = query_enc / ((1-self.normalization_factor) * torch.norm(query_enc, p=2) + self.normalization_factor)
-            cand_encs = cand_encs / ((1-self.normalization_factor) * torch.norm(cand_encs, p=2, dim=1, keepdim=True) + self.normalization_factor)
+        query_enc = query_enc.unsqueeze(0)        
+        if self.output_layer_type == 'base':
+            query_enc = F.relu(query_enc * self.projector_weights + self.projector_bias) + query_enc
+        elif self.output_layer_type == 'projection':
+            query_enc = F.relu(self.projector(query_enc)) + query_enc
+        elif self.output_layer_type == 'highway':
+            proj = F.relu(self.projector(query_enc))
+            gate = F.sigmoid(self.proj_gate(query_enc))
+            query_enc = (gate * proj) + ((1-gate) * query_enc)
 
         # Compute distance from satisfaction
         logits = torch.sum(torch.max(query_enc - cand_encs + self.epsilon, self.zero))
         return logits
 
-    def forward(self, query_inputs, cand_inputs):
+    
+    def logits_to_probs(self, logits):
+        """ Convert logits (aka distance to satisfaction scores) for a single query to probabilities. 
+        Args:
+        - logits: tensor of logits for a single query
+
+        """
+        exp =  torch.exp(logits)
+        sum_exp = torch.sum(exp)
+        return exp / sum_exp
+
+    
+    def forward(self, query_inputs, cand_inputs, convert_logits_to_probs=False):
         """ Forward pass from encodings to scores.
         Args:
         - query_inputs: dict containing query_enc (1-D)
         - cand_inputs: dict containing cand_encs (2-D)
 
         """
-        return self.score_candidates(query_inputs["query_enc"], cand_inputs["cand_encs"])
+        logits = self.compute_distance_to_satisfaction(query_inputs["query_enc"], cand_inputs["cand_encs"])
+        if convert_logits_to_probs:
+            return logits_to_probs(logits)
+        else:
+            return logits
+
 

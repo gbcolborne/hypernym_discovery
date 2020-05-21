@@ -509,8 +509,8 @@ def main():
     
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model (warning: may also remove accents).")
-    parser.add_argument("--use_projection_matrix", action='store_true',
-                        help="Use projection matrix instead of a weight vector and a bias vector")
+    parser.add_argument("--output_layer_type", choices=['base', 'projection', 'highway'], required=True,
+                        help="Output layer type")
     parser.add_argument("--spon_epsilon", type=float, default=1e-3,
                         help="Positive real value of epsilon in the SPON distance from satisfaction")
     
