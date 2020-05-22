@@ -116,7 +116,7 @@ class SPONScorer(torch.nn.Module):
             query_enc = F.relu(self.projector(query_enc)) + query_enc
         elif self.output_layer_type == 'highway':
             proj = F.relu(self.projector(query_enc))
-            gate = sigmoid(self.proj_gate(query_enc))
+            gate = torch.sigmoid(self.proj_gate(query_enc))
             query_enc = (gate * proj) + ((1-gate) * query_enc)
 
         # Compute distance from satisfaction
