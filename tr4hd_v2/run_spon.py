@@ -214,10 +214,16 @@ def compute_loss(y_probs, targets, reduction=None):
     assert len(y_probs.size()) == 2
     assert len(targets.size()) == 1
     assert targets.size()[0] == y_probs.size()[0]
+    if reduction is not None:
+        assert reduction in ["sum", "mean"]
     target_probs = y_probs[:,targets]
-    loss = -torch.sum(torch.log(target_probs))
-    return loss
-
+    losses = -torch.log(target_probs)
+    if reduction is None:
+        return losses
+    elif reduction == "sum":
+        return torch.sum(losses)
+    elif reduction == "mean":
+        return torch.mean(losses)
 
 def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
     """ Evaluate model on labeled dataset (without grad). Return dictionary containing evaluation metrics.
