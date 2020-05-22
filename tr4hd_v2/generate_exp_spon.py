@@ -17,6 +17,7 @@ base_cmd += " --max_steps 200000 --logging_steps 5000 --save_steps 5000 --save_t
 
 # Add flags
 #base_cmd += " --freeze_encoder"
+#base_cmd += " --normalize_encodings"
 
 # Set prefix for output directories
 output_prefix = "Out_SPON_1"
@@ -28,7 +29,6 @@ param_key_to_name = {"bs":"per_gpu_train_batch_size",
                      "ng":"nb_neg_samples",
                      "gn":"max_grad_norm",
                      "ss":"pos_subsampling_factor",
-                     "nf":"normalization_factor",
                      "ol":"output_layer_type"}
 
 # Set param values we want to test
@@ -38,7 +38,6 @@ named_param_values = {"bs": ["32"],
                       "ng": ["10"],
                       "gn": ["10"],
                       "ss": ["0.0"],
-                      "nf": ["0.0"],
                       "ol": ["base", "projection", "highway"]}
 
 # Generate all combinations

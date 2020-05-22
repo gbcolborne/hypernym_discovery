@@ -27,7 +27,7 @@ class SPONScorer(torch.nn.Module):
         # Check args
         if pretrained_encoder is None and encoder_config is None:
             raise ValueError("Either pretrained_encoder or encoder_config must be provided.")
-        self.normalization_factor = opt.normalization_factor
+        self.normalize_encodings = opt.normalize_encodings
         self.epsilon = torch.tensor(opt.spon_epsilon, dtype=torch.float32)
         
         # Make 2 copies of the pretrained model
@@ -98,10 +98,10 @@ class SPONScorer(torch.nn.Module):
         nb_cands, cand_hidden_dim = cand_encs.size()
         assert hidden_dim == cand_hidden_dim
 
-        # Soft length normalization
-        if self.normalization_factor > 0.0:
-            query_enc = query_enc / ((1-self.normalization_factor) * torch.norm(query_enc, p=2) + self.normalization_factor)
-            cand_encs = cand_encs / ((1-self.normalization_factor) * torch.norm(cand_encs, p=2, dim=1, keepdim=True) + self.normalization_factor)
+        # Normalize encodings
+        if self.normalize_encodings:
+            query_enc = query_enc / torch.norm(query_enc, p=2) 
+            cand_encs = cand_encs / torch.norm(cand_encs, p=2, dim=1, keepdim=True)
         
         # Apply dropout
         if self.do_dropout:
