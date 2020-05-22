@@ -521,8 +521,8 @@ def main():
                         help="Freeze weights of query encoder during training.")
     parser.add_argument("--freeze_cand_encoder", action='store_true',
                         help="Freeze weights of candidate encoder during training.")
-    parser.add_argument("--normalization_factor", type=float, default=1.0,
-                        help="Real number between 0 and 1 that controls how sensitive the model is to the norm of the encodings")
+    parser.add_argument("--normalize_encodings", action='store_true',
+                        help="Normalize query and candidate encodings")
     parser.add_argument("--learning_rate", default=1e-3, type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--dropout_prob", default=0.0, type=float,
@@ -566,8 +566,6 @@ def main():
     assert opt.save_steps != 0
     assert opt.pos_subsampling_factor >= 0.0
     assert opt.pos_subsampling_factor <= 1.0
-    assert opt.normalization_factor >= 0.0
-    assert opt.normalization_factor <= 1.0    
     if opt.do_train:
         if opt.encoder_name_or_path is None and opt.model_dir is None:
             raise ValueError("Either --encoder_name_or_path or model_dir must be specified if --do_train")

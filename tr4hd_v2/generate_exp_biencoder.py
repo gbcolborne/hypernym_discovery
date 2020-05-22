@@ -18,6 +18,7 @@ base_cmd += " --max_steps 200000 --logging_steps 5000 --save_steps 5000 --save_t
 # Add flags
 #base_cmd += " --freeze_query_encoder"
 #base_cmd += " --freeze_cand_encoder"
+#base_cmd += "--normalize_encodings"
 
 # Set prefix for output directories
 output_prefix = "Out_Biencoder_1"
@@ -28,8 +29,7 @@ param_key_to_name = {"bs":"per_gpu_train_batch_size",
                      "dp":"dropout_prob",
                      "ng":"nb_neg_samples",
                      "gn":"max_grad_norm",
-                     "ss":"pos_subsampling_factor",
-                     "nf":"normalization_factor"}
+                     "ss":"pos_subsampling_factor"}
 
 # Set param values we want to test
 named_param_values = {"bs": ["32"],
@@ -37,8 +37,8 @@ named_param_values = {"bs": ["32"],
                       "dp": ["0.2"],
                       "ng": ["10"],
                       "gn": ["10"],
-                      "ss": ["0.5"],
-                      "nf": ["0.0", "0.5", "1.0"]}
+                      "ss": ["0.5"]}
+
 
 # Generate all combinations
 settings = [{}]
