@@ -13,7 +13,7 @@ base_cmd += " --data_dir ../data/1A_random_split/ --lang en"
 base_cmd += " --encoder_type xlm --encoder_name_or_path ../PretrainedModel_XLM_small_vocab"
 base_cmd += " --do_train --evaluate_during_training"
 base_cmd += " --per_gpu_eval_batch_size 512"
-base_cmd += " --max_steps 200000 --logging_steps 5000 --save_steps 5000 --save_total_limit 1"
+base_cmd += " --max_steps 50000 --logging_steps 1000 --save_steps 1000 --save_total_limit 1"
 
 # Add flags
 #base_cmd += " --freeze_encoder"
@@ -34,9 +34,9 @@ param_key_to_name = {"bs":"per_gpu_train_batch_size",
 # Set param values we want to test
 named_param_values = {"bs": ["32"],
                       "lr": ["1e-5"],
-                      "dp": ["0.2"],
+                      "dp": ["0.0"],
                       "ng": ["10"],
-                      "gn": ["10"],
+                      "gn": ["None"],
                       "ss": ["0.0"],
                       "ol": ["base", "projection", "highway"]}
 
