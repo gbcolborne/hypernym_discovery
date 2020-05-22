@@ -36,7 +36,7 @@ named_param_values = {"bs": ["32"],
                       "lr": ["1e-5"],
                       "dp": ["0.0"],
                       "ng": ["10"],
-                      "gn": ["None"],
+                      "gn": ["-1"],
                       "ss": ["0.0"],
                       "ol": ["base", "projection", "highway"]}
 
