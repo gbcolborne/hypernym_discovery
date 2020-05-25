@@ -527,7 +527,7 @@ def main():
                         help="Set this flag if you are using an uncased model (warning: may also remove accents).")
     parser.add_argument("--output_layer_type", choices=['base', 'projection', 'highway'], required=False,
                         help="Output layer type")
-    parser.add_argument("--spon_epsilon", type=float, default=1e-3,
+    parser.add_argument("--spon_epsilon", type=float, default=1e-8,
                         help="Positive real value of epsilon in the SPON distance from satisfaction")
     
     parser.add_argument("--per_gpu_eval_batch_size", default=512, type=int,
