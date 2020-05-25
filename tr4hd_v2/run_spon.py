@@ -40,6 +40,11 @@ def load_model_and_tokenizer(opt, encoder_config, tokenizer_class):
     # Load training options
     train_opt = torch.load(os.path.join(opt.model_dir, 'training_args.bin'))
 
+    # Add missing options to opt
+    for k,v in train_opt._get_kwargs():
+        if k not in opt or (k in opt and opt.__dict__[k] is None and train_opt.__dict__[k] is not None):
+            opt.__dict__[k] = v
+    
     # Load tokenizer
     tokenizer = tokenizer_class.from_pretrained(opt.model_dir, do_lower_case=opt.do_lower_case)
     
