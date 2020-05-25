@@ -267,8 +267,7 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
         for j in range(RANKING_CUTOFF):
             cand, score = top_candidates_and_scores[i][j]
             all_preds.append(cand)
-    results["diversity"] = len(set(all_preds)) / len(all_preds)
-
+    results["diversity"] = (len(set(all_preds)) - RANKING_CUTOFF) / (len(all_preds) - RANKING_CUTOFF)
     return results
 
 
