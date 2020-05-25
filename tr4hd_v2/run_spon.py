@@ -258,9 +258,18 @@ def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
         y_true[pos_cand_ids] = 1
         ap = average_precision_score(y_true=y_true, y_score=y_probs[i])
         ap_scores.append(ap)
-        
-    # Return dict comtaining metrics
     results = {"MAP": np.mean(ap_scores)}
+    
+    # Compute diversity of predictions across queries
+    top_candidates_and_scores = get_top_k_candidates_and_scores(y_probs)
+    all_preds = []
+    for i in range(nb_queries):
+        for j in range(RANKING_CUTOFF):
+            cand, score = top_candidates_and_scores[i][j]
+            all_preds.add(cand)
+    assert len(all_preds) == nb_queries * RANKING_CUTOFF
+    results["diversity"] = len(set(all_preds)) / len(all_preds)
+
     return results
 
 
