@@ -39,7 +39,7 @@ RANKING_CUTOFF = 15
 def load_model_and_tokenizer(opt, encoder_config, tokenizer_class):
     # Load training options
     train_opt = torch.load(os.path.join(opt.model_dir, 'training_args.bin'))
-    
+
     # Load tokenizer
     tokenizer = tokenizer_class.from_pretrained(opt.model_dir, do_lower_case=opt.do_lower_case)
     
@@ -513,7 +513,7 @@ def main():
     
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model (warning: may also remove accents).")
-    parser.add_argument("--output_layer_type", choices=['base', 'projection', 'highway'], required=True,
+    parser.add_argument("--output_layer_type", choices=['base', 'projection', 'highway'], required=False,
                         help="Output layer type")
     parser.add_argument("--spon_epsilon", type=float, default=1e-3,
                         help="Positive real value of epsilon in the SPON distance from satisfaction")
@@ -578,6 +578,12 @@ def main():
             path = os.path.join(opt.model_dir, 'state_dict.pt')
             if not os.path.exists(path):
                 raise ValueError("--model_dir must contain a model if --encoder_name_or_path is not specified")
+        elif opt.output_layer_type is None:
+            msg = ("--output_layer_type must be specified unless you are re-training a model "
+                   "(in which case use --model_dir rather than --encoder_name_or_path)")
+            raise ValueError(msg)
+    if opt.do_train or opt.do_pred:
+        assert opt.eval_dir is not None
     if os.path.exists(opt.model_dir) and os.listdir(opt.model_dir) and opt.do_train and opt.encoder_name_or_path is not None and not opt.overwrite_model_dir:
         raise ValueError("Model directory ({}) already exists and is not empty. Use --overwrite_model_dir to overcome.".format(opt.model_dir))
     if (opt.do_train or opt.do_pred) and os.path.exists(opt.eval_dir) and os.listdir(opt.eval_dir):

@@ -15,12 +15,12 @@ class SPONScorer(torch.nn.Module):
     """ SPON scoring module. """
 
     def __init__(self, opt, pretrained_encoder=None, encoder_config=None):
-        """ Init from a pretrained encoder or an encoder config (in which case an encoder is initialized). If you are going to load a pretrained state_dict, then you will probably want to provide a config.
+        """ Init from a pretrained encoder or an encoder config, in which case an encoder is initialized from encoder_config, and the rest of the model is initialized from the options in opt.
         Args:
         - opt
         - pretrained_encoder
         - encoder_config
-        
+
         """
         
         super(SPONScorer, self).__init__()
@@ -29,8 +29,11 @@ class SPONScorer(torch.nn.Module):
             raise ValueError("Either pretrained_encoder or encoder_config must be provided.")
         self.normalize_encodings = opt.normalize_encodings
         self.epsilon = torch.tensor(opt.spon_epsilon, dtype=torch.float32)
-        
-        # Make 2 copies of the pretrained model
+        self.freeze_encoder = opt.freeze_encoder
+        self.dropout_prob = opt.dropout_prob
+        self.output_layer_type = opt.output_layer_type
+            
+        # Encoder
         if pretrained_encoder is None:
             model_class = MODEL_CLASSES[opt.encoder_type]
             self.encoder = model_class(encoder_config)
@@ -39,19 +42,18 @@ class SPONScorer(torch.nn.Module):
             
         # Check if we freeze the encoder
         for p in self.encoder.parameters():
-            if opt.freeze_encoder:
+            if self.freeze_encoder:
                 p.requires_grad = False
             else:
                 p.requires_grad = True
 
         # Dropout layer
-        self.do_dropout = opt.dropout_prob > 0
+        self.do_dropout = self.dropout_prob > 0
         if self.do_dropout:
             self.dropout = torch.nn.Dropout(p=opt.dropout_prob, inplace=False)
                 
         # Query transformation layer 
         self.hidden_dim = self.encoder.config.emb_dim
-        self.output_layer_type = opt.output_layer_type
         if self.output_layer_type == 'base':
             weight_data = torch.randn(self.hidden_dim) * math.sqrt(6./self.hidden_dim)
             bias_data = torch.randn(self.hidden_dim) * math.sqrt(6./self.hidden_dim)
