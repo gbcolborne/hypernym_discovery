@@ -30,7 +30,8 @@ param_key_to_name = {"bs":"per_gpu_train_batch_size",
                      "gn":"max_grad_norm",
                      "ss":"pos_subsampling_factor",
                      "ol":"output_layer_type",
-                     "ep":"spon_epsilon"}
+                     "ep":"spon_epsilon",
+                     "iq":"iq_penalty"}
 
 # Set param values we want to test
 named_param_values = {"bs": ["32"],
@@ -40,7 +41,8 @@ named_param_values = {"bs": ["32"],
                       "gn": ["-1"],
                       "ss": ["0.0"],
                       "ol": ["highway"],
-                      "ep":["1e-7", "1e-6", "1e-5", "1e-4"]}
+                      "ep": ["1e-7"],
+                      "iq": ["0.1"]}
 
 # Generate all combinations
 settings = [{}]

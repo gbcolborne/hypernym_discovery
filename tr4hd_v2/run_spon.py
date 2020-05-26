@@ -504,16 +504,7 @@ def main():
     parser.add_argument("--encoder_name_or_path", default=None, type=str, required=False,
                         help="Path to pre-trained encoder or shortcut name selected in the list: " + ", ".join(ALL_MODELS))
 
-    ## Other parameters
-    parser.add_argument("--encoder_config_name", default="", type=str,
-                        help="Pretrained encoder config name or path if not the same as encoder_name")
-    parser.add_argument("--tokenizer_name", default="", type=str,
-                        help="Pretrained tokenizer name or path if not the same as encoder_name")
-    parser.add_argument("--encoder_cache_dir", default="", type=str,
-                        help="Where do you want to store the pre-trained models (encoders) downloaded from s3")
-    parser.add_argument("--max_seq_length", default=32, type=int,
-                        help="The maximum total input sequence length after tokenization. Sequences longer "
-                             "than this will be truncated, sequences shorter will be padded.")
+    # Modes
     parser.add_argument("--do_train", action='store_true',
                         help="Whether to run training.")
     parser.add_argument("--do_eval", action='store_true',
@@ -523,13 +514,30 @@ def main():
     parser.add_argument("--evaluate_during_training", action='store_true',
                         help="Run evaluation on dev set during training at each logging step.")
     
+    ## Tokenizer parameters
+    parser.add_argument("--tokenizer_name", default="", type=str,
+                        help="Pretrained tokenizer name or path if not the same as encoder_name")
+    parser.add_argument("--max_seq_length", default=32, type=int,
+                        help="The maximum total input sequence length after tokenization. Sequences longer "
+                             "than this will be truncated, sequences shorter will be padded.")
     parser.add_argument("--do_lower_case", action='store_true',
                         help="Set this flag if you are using an uncased model (warning: may also remove accents).")
+
+    # Model parameters
     parser.add_argument("--output_layer_type", choices=['base', 'projection', 'highway'], required=False,
                         help="Output layer type")
+    parser.add_argument("--encoder_config_name", default="", type=str,
+                        help="Pretrained encoder config name or path if not the same as encoder_name")
+    parser.add_argument("--encoder_cache_dir", default="", type=str,
+                        help="Where do you want to store the pre-trained models (encoders) downloaded from s3")
     parser.add_argument("--spon_epsilon", type=float, default=1e-8,
                         help="Positive real value of epsilon in the SPON distance from satisfaction")
+    parser.add_argument("--iq_penalty", type=float, default=0.0,
+                        help="Real-valued scalar weight of the penalty for ignoring the query")
+    parser.add_argument("--freeze_encoder", action='store_true', help="Freeze weights of encoder during training.")
+    parser.add_argument("--normalize_encodings", action='store_true', help="Normalize encodings")    
     
+    # Batching and sampling parameters
     parser.add_argument("--per_gpu_eval_batch_size", default=512, type=int,
                         help="Batch size (nb queries) per GPU/CPU for evaluation.")
     parser.add_argument("--per_gpu_train_batch_size", default=32, type=int,
@@ -538,8 +546,8 @@ def main():
                         help=("Nb neg samples per positive example (for training only)."))
     parser.add_argument("--pos_subsampling_factor", type=float, default=0.0,
                         help="Real number between 0 and 1 that controls how aggressively we subsample positive examples during training")
-    parser.add_argument("--freeze_encoder", action='store_true', help="Freeze weights of encoder during training.")
-    parser.add_argument("--normalize_encodings", action='store_true', help="Normalize encodings")    
+
+    # Training paramaters
     parser.add_argument("--learning_rate", default=1e-3, type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--dropout_prob", default=0.0, type=float,
@@ -560,6 +568,8 @@ def main():
                         help="Save checkpoint every X updates steps.")
     parser.add_argument('--save_total_limit', type=int, default=None,
                         help='Limit the total amount of checkpoints, delete the older checkpoints in the model_dir, does not delete by default')
+
+    # Other parameters
     parser.add_argument("--no_cuda", action='store_true',
                         help="Avoid using CUDA when available")
     parser.add_argument('--overwrite_model_dir', action='store_true',

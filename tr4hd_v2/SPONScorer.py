@@ -32,7 +32,8 @@ class SPONScorer(torch.nn.Module):
         self.freeze_encoder = opt.freeze_encoder
         self.dropout_prob = opt.dropout_prob
         self.output_layer_type = opt.output_layer_type
-            
+        self.iq_penalty = opt.iq_penalty
+        
         # Encoder
         if pretrained_encoder is None:
             model_class = MODEL_CLASSES[opt.encoder_type]
@@ -123,6 +124,12 @@ class SPONScorer(torch.nn.Module):
 
         # Compute distance from satisfaction
         logits = torch.sum(torch.clamp(query_enc - cand_encs + self.epsilon, min=0), dim=1)
+        if self.iq_penalty > 0:
+            # Compute distance from satisfaction if we ignored the query, then apply penalty
+            zero_enc = query_enc.clone().zero_()
+            logits_cand_only = torch.sum(torch.clamp(zero_enc - cand_encs + self.epsilon, min=0), dim=1)
+            logits = logits - (self.iq_penalty * logits_cand_only)
+            
         return logits
 
     
