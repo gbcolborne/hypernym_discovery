@@ -123,13 +123,10 @@ class SPONScorer(torch.nn.Module):
             query_enc = (gate * proj) + ((1-gate) * query_enc)
 
         # Compute distance from satisfaction
-        logits = torch.sum(torch.clamp(query_enc - cand_encs + self.epsilon, min=0), dim=1)
         if self.iq_penalty > 0:
-            # Compute distance from satisfaction if we ignored the query, then apply penalty
-            zero_enc = query_enc.clone().zero_()
-            logits_cand_only = torch.sum(torch.clamp(zero_enc - cand_encs + self.epsilon, min=0), dim=1)
-            logits = logits - (self.iq_penalty * logits_cand_only)
-            
+            logits = torch.sum(torch.clamp(query_enc - cand_encs + self.epsilon, min=0) - self.iq_penalty*torch.clamp(-cand_encs + self.epsilon, min=0), dim=1)
+        else:
+            logits = torch.sum(torch.clamp(query_enc - cand_encs + self.epsilon, min=0), dim=1)
         return logits
 
     
