@@ -45,11 +45,14 @@ def make_train_set(opt, tokenizer, train_data, seed=0, verbose=False):
     min_freq = min(hyp_fd.values())
 
     # Compute negative sampling probabilities (with Laplace smoothing)
-    counts = np.ones(len(candidates), dtype=float)
+    if opt.smoothe_neg_sampling:
+        counts = np.ones(len(candidates), dtype=float)
+    else:
+        counts = np.zeros(len(candidates), dtype=float)
     for c,f in hyp_fd.items():
-        counts[c] = f + 1
+        counts[c] += f
     neg_sampling_probs = counts / counts.sum()
-    
+
     # Subsample positive examples based on gold hypernym frequencies
     if opt.pos_subsampling_factor > 0.0:
         # Compute sampling probabilities

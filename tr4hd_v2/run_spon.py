@@ -544,6 +544,9 @@ def main():
                         help="Batch size (nb queries) per GPU/CPU for training.")
     parser.add_argument("--nb_neg_samples", default=10, type=int, 
                         help=("Nb neg samples per positive example (for training only)."))
+    parser.add_argument("--smoothe_neg_sampling", action='store_true',
+                        help=("Use laplace smoothing when computing neg sampling probabilities "
+                              "(otherwise candidates that are never seen as hypernyms in training have zero probability)"))
     parser.add_argument("--pos_subsampling_factor", type=float, default=0.0,
                         help="Real number between 0 and 1 that controls how aggressively we subsample positive examples during training")
 
