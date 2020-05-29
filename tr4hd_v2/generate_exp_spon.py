@@ -15,12 +15,8 @@ base_cmd += " --do_train --evaluate_during_training"
 base_cmd += " --per_gpu_eval_batch_size 512"
 base_cmd += " --max_steps 100000 --logging_steps 1000 --save_steps 1000 --save_total_limit 1"
 
-# Add flags
-#base_cmd += " --freeze_encoder"
-#base_cmd += " --normalize_encodings"
-
 # Set prefix for output directories
-output_prefix = "Out_SPON_1"
+output_prefix = "Out_SPON"
 
 # Map short param names to long ones
 param_key_to_name = {"bs":"per_gpu_train_batch_size",
@@ -31,18 +27,24 @@ param_key_to_name = {"bs":"per_gpu_train_batch_size",
                      "ss":"pos_subsampling_factor",
                      "ol":"output_layer_type",
                      "ep":"spon_epsilon",
-                     "iq":"iq_penalty"}
+                     "iq":"iq_penalty",
+                     "fe":"freeze_encoder",
+                     "ne":"normalize_encodings",
+                     "sn":"smoothe_neg_sampling",}
 
-# Set param values we want to test
-named_param_values = {"bs": ["32"],
+# Set param values we want to test. For flags, use True or False. For args, use strings.
+named_param_values = {"bs": ["16"],
                       "lr": ["2e-5"],
                       "dp": ["0.0"],
                       "ng": ["10"],
                       "gn": ["-1"],
                       "ss": ["0.0"],
                       "ol": ["highway"],
-                      "ep": ["1e-7"],
-                      "iq": ["0.1"]}
+                      "ep": ["1e-5"],
+                      "iq": ["0.0"],
+                      "fe": [False],
+                      "ne": [False],
+                      "sn": [False, True],}
 
 # Generate all combinations
 settings = [{}]
@@ -73,7 +75,13 @@ for setting in settings:
     custom_cmd += " --eval_dir %s" % eval_dir
     for k,v in setting.items():
         param_name = param_key_to_name[k]
-        custom_cmd += " --%s %s" % (param_name, v)
+        # Args
+        if type(v) == str:
+            custom_cmd += " --%s %s" % (param_name, v)
+        # Flags
+        else:
+            if v is True:
+                custom_cmd += " --%s" % (param_name)
     lines.append(custom_cmd + " ;")
     lines.append("rm -rf %s ;" % model_dir)
 
