@@ -28,17 +28,30 @@ def make_train_set(opt, tokenizer, train_data, seed=0, verbose=False):
     # Load training data
     queries = train_data["queries"]
     gold_cand_ids = train_data["gold_hypernym_candidate_ids"]
+    candidates = train_data["candidates"]
+    q2gold = {}
 
+    # Map queries to gold hypernyms
+    for i in range(len(queries)):
+        q2gold[queries[i]] = set(gold_cand_ids[i])
+    
+    # Compute hypernym frequencies
+    hyp_fd = {}
+    for sub in gold_cand_ids:
+        for hyp in sub:
+            if hyp not in hyp_fd:
+                hyp_fd[hyp] = 0
+            hyp_fd[hyp] += 1
+    min_freq = min(hyp_fd.values())
+
+    # Compute negative sampling probabilities (with Laplace smoothing)
+    counts = np.ones(len(candidates), dtype=float)
+    for c,f in hyp_fd.items():
+        counts[c] = f + 1
+    neg_sampling_probs = counts / counts.sum()
+    
     # Subsample positive examples based on gold hypernym frequencies
     if opt.pos_subsampling_factor > 0.0:
-        # Compute hypernym frequencies
-        hyp_fd = {}
-        for sub in gold_cand_ids:
-            for hyp in sub:
-                if hyp not in hyp_fd:
-                    hyp_fd[hyp] = 0
-                hyp_fd[hyp] += 1
-        min_freq = min(hyp_fd.values())
         # Compute sampling probabilities
         sample_probs = {}
         for hyp, freq in hyp_fd.items():
@@ -58,21 +71,24 @@ def make_train_set(opt, tokenizer, train_data, seed=0, verbose=False):
         gold_cand_ids = h_tmp
         
     # Log some stats
-    nb_candidates = len(train_data["candidates"])
+    nb_candidates = len(candidates)
     nb_queries = len(queries)
     nb_pos_examples = sum(len(x) for x in gold_cand_ids)
     nb_neg_samples = nb_pos_examples * opt.nb_neg_samples
     if verbose:
         logger.info("***** Making training set ******")
+        logger.info("  Nb queries: {}".format(nb_queries))
+        logger.info("  Max length: {}".format(opt.max_seq_length))
         logger.info("  Positive example subsampling factor: {}".format(opt.pos_subsampling_factor))        
         logger.info("  Nb positive examples kept: {}".format(nb_pos_examples))
         logger.info("  Nb negative examples sampled: {}".format(nb_neg_samples))
-        logger.info("  Nb queries: {}".format(nb_queries))
-        logger.info("  Max length: {}".format(opt.max_seq_length))
+        logger.info("  Min negative sampling probability: {}".format(neg_sampling_probs.min()))
+        logger.info("  Max negative sampling probability: {}".format(neg_sampling_probs.max()))        
         
-    # Sample a bunch of indices at once to save time on generating random candidate indices
+    # Sample a bunch of hypernyms which we will use as negative examples
     buffer_size = 1000000
-    sampled_cand_ids = np.random.randint(nb_candidates, size=buffer_size)
+    cand_ids = np.arange(len(candidates))
+    sampled_cand_ids = np.random.choice(cand_ids, size=buffer_size, replace=True, p=neg_sampling_probs)
     buffer_index = 0
 
     # Negative sampling
@@ -87,11 +103,12 @@ def make_train_set(opt, tokenizer, train_data, seed=0, verbose=False):
             # Sample negative examples
             while len(cand_id_sample) < opt.nb_neg_samples:
                 cand_id = sampled_cand_ids[buffer_index]
-                cand_id_sample.append(cand_id)
+                if cand_id not in q2gold[queries[i]]:
+                    cand_id_sample.append(cand_id)
                 buffer_index += 1
                 # Check if we should refresh buffer
                 if buffer_index == buffer_size:
-                    sampled_cand_ids = np.random.randint(nb_candidates, size=buffer_size)
+                    sampled_cand_ids = np.random.choice(cand_ids, size=buffer_size, replace=True, p=neg_sampling_probs)
                     buffer_index = 0
             cand_id_sample.append(gold_cand_ids[i][j])                    
             # Shuffle in a way where we remember where our target goes
