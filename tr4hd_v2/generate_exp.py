@@ -59,6 +59,7 @@ param_key_to_name = {"ea": "encoding_arch",
                      "gn": "max_grad_norm",
                      "lr": "learning_rate",
                      "dp": "dropout_prob",
+                     "wd": "weight_decay",
                      }
 
 # Set param values we want to test. For flags, use True or False. For args, use strings.
@@ -76,6 +77,7 @@ named_param_values = {"ea": ["single", "bi"],
                       "gn": ["-1"],                      
                       "lr": ["2e-5"],                      
                       "dp": ["0.0"],
+                      "wd": ["0"],
                       }
 
 # Generate all combinations
