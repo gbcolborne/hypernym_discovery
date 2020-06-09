@@ -50,9 +50,9 @@ class Scorer(torch.nn.Module):
             
         # Make encoder
         if self.encoding_arch == "single"
-            self.encoder = SingleEncoder(opt, pretrained_encoder=pretrained_encoder, encoder_config)
+            self.encoder = SingleEncoder(opt, pretrained_encoder=pretrained_encoder, encoder_config=encoder_config)
         else:
-            self.encoder = BiEncoder(opt, pretrained_encoder=pretrained_encoder, encoder_config)
+            self.encoder = BiEncoder(opt, pretrained_encoder=pretrained_encoder, encoder_config=encoder_config)
         self.hidden_dim = self.encoder.config.emb_dim
         
         # Dropout layer
@@ -67,13 +67,14 @@ class Scorer(torch.nn.Module):
         elif self.transform == 'projection':
             self.projector = torch.nn.Linear(self.hidden_dim, self.hidden_dim, bias=True)
             self.projector.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
-        elif self.output_layer_type == 'highway':
+        elif self.transform == 'highway':
             self.projector = torch.nn.Linear(self.hidden_dim, self.hidden_dim, bias=True)
             self.proj_gate = torch.nn.Linear(self.hidden_dim, self.hidden_dim, bias=True)
             self.projector.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
             self.proj_gate.weight.data = torch.randn(self.hidden_dim, self.hidden_dim)*math.sqrt(6./(self.hidden_dim + self.hidden_dim))
             self.proj_gate.bias.data.fill_(-2.0)
 
+            
     def encode_queries(self, inputs):
         """ Encode queries.
 
@@ -82,6 +83,7 @@ class Scorer(torch.nn.Module):
 
         """
         return self.encoder.encode_queries(inputs)
+
     
     def encode_candidates(self, inputs):
         """ Encode candidates.
@@ -92,6 +94,7 @@ class Scorer(torch.nn.Module):
         """
         return self.encoder.encode_candidates(inputs)
 
+    
     def compute_distance_to_satisfaction(self, query_enc, cand_encs):
         """ Score candidates wrt query. Return 1-D Tensor of scores.
 
@@ -126,7 +129,8 @@ class Scorer(torch.nn.Module):
         max_logit = torch.max(logits)
         exp = torch.exp(logits - max_logit)
         sum_exp = torch.sum(exp)
-        return exp / sum_exp
+        softmax = exp / sum_exp
+        return softmax
 
     
     def score_candidates(self, query_enc, cand_encs):
@@ -163,9 +167,9 @@ class Scorer(torch.nn.Module):
         query_enc = query_enc.unsqueeze(0)        
         if self.transform == 'scaling':
             query_enc = F.relu(query_enc * self.projector_weights + self.projector_bias) + query_enc
-        elif self.output_layer_type == 'projection':
+        elif self.transform == 'projection':
             query_enc = F.relu(self.projector(query_enc)) + query_enc
-        elif self.output_layer_type == 'highway':
+        elif self.transform == 'highway':
             proj = F.relu(self.projector(query_enc))
             gate = torch.sigmoid(self.proj_gate(query_enc))
             query_enc = (gate * proj) + ((1-gate) * query_enc)
@@ -208,7 +212,7 @@ class BiEncoder(torch.nn.Module):
         - encoder_config
 
         """
-        super(BiEncoderScorer, self).__init__()
+        super(BiEncoder, self).__init__()
 
         # Check args
         if pretrained_encoder is None and encoder_config is None:
@@ -285,7 +289,7 @@ class SingleEncoder(torch.nn.Module):
         - encoder_config
 
         """
-        super(SPONScorer, self).__init__()
+        super(SingleEncoder, self).__init__()
 
         # Check args
         if pretrained_encoder is None and encoder_config is None:
