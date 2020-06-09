@@ -119,20 +119,6 @@ class Scorer(torch.nn.Module):
         return dot
 
     
-    def softmax(self, logits)
-        """ Exponentiate and normalize scores (i.e. compute softmax) for a single query (numerically stable).
-
-        Args:
-        - logits: 1-D tensor of logits for a single query
-
-        """
-        max_logit = torch.max(logits)
-        exp = torch.exp(logits - max_logit)
-        sum_exp = torch.sum(exp)
-        softmax = exp / sum_exp
-        return softmax
-
-    
     def score_candidates(self, query_enc, cand_encs):
         """
         Score candidates wrt query. Return 1-D Tensor of scores.
@@ -181,6 +167,24 @@ class Scorer(torch.nn.Module):
             scores = self.compute_distance_to_satisfaction(query_enc, cand_encs)
         return scores
 
+
+    def softmax(self, logits)
+        """ Exponentiate and normalize scores (i.e. compute softmax) for a single query (numerically stable).
+
+        Args:
+        - logits: 1-D tensor of logits for a single query
+
+        """
+        max_logit = torch.max(logits)
+        exp = torch.exp(logits - max_logit)
+        sum_exp = torch.sum(exp)
+        softmax = exp / sum_exp
+        return softmax
+
+
+    def convert_logits_to_probs(self, logits):
+        return self.softmax(logits)
+
     
     def forward(self, query_inputs, cand_inputs, convert_logits_to_probs=False):
         """ Forward pass from encodings to scores.
@@ -192,7 +196,7 @@ class Scorer(torch.nn.Module):
         """
         logits = self.compute_scores(query_inputs["query_enc"], cand_inputs["cand_encs"])
         if convert_logits_to_probs:
-            return self.softmax(logits)
+            return self.convert_logits_to_probs(logits)
         else:
             return logits
 
