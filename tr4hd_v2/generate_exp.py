@@ -5,13 +5,13 @@ import numpy as np
 """ Generate script for random hyperparameter search. """
 
 # User-defined constants
-NOHUP = False    # Run with nohup
-PSUB = False     # Run with psub
+NOHUP = True    # Run with nohup
+PSUB = True     # Run with psub
 JOBNAME_PLACEHOLDER = "<JOBNAME_PLACEHOLDER>"
 PSUB_CMD = "psub -P nrc_ict -uc -ug -N {} -cpus 1 -mem 24G -gpu -l res_gpus=1 -l res_gputype=k80 -l h_rt=172800".format(JOBNAME_PLACEHOLDER)
 CUDA_DEVICES="0"
 MAX_TESTS = 32
-SEED=91500
+SEED = 91500
 
 def get_psub_command(jobname):
     return PSUB_CMD.replace(JOBNAME_PLACEHOLDER, jobname)
@@ -71,7 +71,7 @@ named_param_values = {"ea": ["single", "bi"],
                       "lf": ["nll", "nllmod"],
                       "bs": ["16"],
                       "ng": ["10"],
-                      "sn": [False,
+                      "sn": [False],
                       "ss": ["0.0"],
                       "gn": ["-1"],                      
                       "lr": ["2e-5"],                      
@@ -101,7 +101,8 @@ for setting in settings:
     model_dir = "_".join([output_prefix, "Model", uniq_name])
     eval_dir = "_".join([output_prefix, "Eval", uniq_name])
     if PSUB:
-        psub_cmd = get_psub_command(uniq_name) 
+        jobname = "%s_%s" % (output_prefix, uniq_name)
+        psub_cmd = get_psub_command(jobname) 
         cmd = psub_cmd + " " + base_cmd
     else:
         cmd = base_cmd
@@ -121,7 +122,8 @@ for setting in settings:
         cmd += " > %s & " % nohup_fn
     else:
         cmd += " ;"
-
+    cmds.append(cmd)
+    
 # Write commands
 for cmd in cmds:
     print(cmd)
