@@ -572,7 +572,7 @@ def main():
     parser.add_argument("--dropout_prob", default=0.0, type=float,
                         help="Probability of zeroing out values in the query and candidate encodings.")
     parser.add_argument("--weight_decay", default=0.0, type=float,
-                        help="Weight deay if we apply some.")
+                        help="Weight decay if we apply some.")
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
                         help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=None, type=float, required=False,
