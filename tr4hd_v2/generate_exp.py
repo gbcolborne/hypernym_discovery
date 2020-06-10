@@ -6,8 +6,8 @@ from cluster_utils import get_psub_command
 """ Generate script for random hyperparameter search. """
 
 # User-defined constants
-NOHUP = True    # Run with nohup
-PSUB = True     # Run with psub
+NOHUP = False    # Run with nohup
+PSUB = False     # Run with psub
 CUDA_DEVICES="0"
 MAX_TESTS = 32
 SEED = 91500
@@ -59,13 +59,13 @@ param_key_to_name = {"ea": "encoding_arch",
                      }
 
 # Set param values we want to test. For flags, use True or False. For args, use strings.
-named_param_values = {"ea": ["single", "bi"],
+named_param_values = {"ea": ["single"], # "bi"
                       "fe": [False],
                       "ne": [False],
-                      "tr": ["none", "scaling", "projection", "highway"],
-                      "sf": ["dot", "spon"],
+                      "tr": ["none"],   # "scaling", "projection", "highway"
+                      "sf": ["dot"],    # "spon"
                       "ep": ["1e-5"],                      
-                      "lf": ["nll", "nllmod"],
+                      "lf": ["nll"],    # "nllmod"
                       "bs": ["16"],
                       "ng": ["10"],
                       "sn": [False],
