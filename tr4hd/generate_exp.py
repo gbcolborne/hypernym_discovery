@@ -11,6 +11,7 @@ PSUB = False     # Run with psub
 CUDA_DEVICES="0"
 MAX_TESTS = 32
 SEED = 91500
+DELIM = ";"
 
 # Seed RNGs
 random.seed(SEED)
@@ -32,7 +33,7 @@ base_cmd += " --encoder_name_or_path ../PretrainedModel_XLM_small_vocab"
 base_cmd += " --do_train"
 base_cmd += " --evaluate_during_training"
 base_cmd += " --per_gpu_eval_batch_size 512"
-base_cmd += " --max_steps 100000"
+base_cmd += " --max_steps 25000"
 base_cmd += " --logging_steps 1000"
 base_cmd += " --save_steps 1000"
 base_cmd += " --save_total_limit 1"
@@ -59,21 +60,21 @@ param_key_to_name = {"ea": "encoding_arch",
                      }
 
 # Set param values we want to test. For flags, use True or False. For args, use strings.
-named_param_values = {"ea": ["single"], # "bi"
-                      "fe": [False],
-                      "ne": [False],
-                      "tr": ["none"],   # "scaling", "projection", "highway"
-                      "sf": ["dot"],    # "spon"
-                      "ep": ["1e-5"],                      
-                      "lf": ["nll"],    # "nllmod"
-                      "bs": ["16"],
-                      "ng": ["10"],
-                      "sn": [False],
-                      "ss": ["0.0"],
-                      "gn": ["-1"],                      
-                      "lr": ["2e-5"],                      
-                      "dp": ["0.0"],
-                      "wd": ["0"],
+named_param_values = {"ea": ["single", "bi"],
+                      "fe": [True, False],
+                      "ne": [True, False],
+                      "tr": ["none", "scaling", "projection", "highway"],
+                      "sf": ["dot", "spon"],
+                      "ep": ["1e-1", "1e-3", "1e-5", "1e-7"],                      
+                      "lf": ["nll", "nllmod"],
+                      "bs": ["8", "16", "32"],
+                      "ng": ["4", "8", "16"],
+                      "sn": [True, False],
+                      "ss": ["0.0", "1.0"],
+                      "gn": ["-1", "4", "8", "16"],                      
+                      "lr": ["1e-3", "1e-4", "1e-5", "1e-6"],                      
+                      "dp": ["0.0", "0.1", "0.2", "0.4"],
+                      "wd": ["0", "1e-1", "1e-3", "1e-5", "1e-7"],
                       }
 
 # Generate all combinations
@@ -117,11 +118,9 @@ for setting in settings:
                 cmd += " --%s" % (param_name)
     if NOHUP:
         nohup_fn = "nohup_%s_%s.out" % (output_prefix, uniq_name)
-        cmd += " > %s & " % nohup_fn
-    else:
-        cmd += " ;"
+        cmd += " > %s " % nohup_fn
     cmds.append(cmd)
     
 # Write commands
 for cmd in cmds:
-    print(cmd)
+    print(cmd + " " + DELIM)
