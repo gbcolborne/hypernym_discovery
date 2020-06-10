@@ -15,3 +15,7 @@ word2vec/
 
 # Notes
 NOTES.txt
+
+# Cluster utils
+cluster_utils.py
+tr4hd/cluster_utils.py
