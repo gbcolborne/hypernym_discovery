@@ -103,7 +103,7 @@ class Scorer(torch.nn.Module):
         - cand_encs: Tensor (2D) 
 
         """        
-        dist = torch.sum(torch.clamp(query_enc - cand_encs + self.epsilon, min=0), dim=1)
+        dist = torch.sum(torch.clamp(query_enc - cand_encs + self.spon_epsilon, min=0), dim=1)
         return dist
 
 
