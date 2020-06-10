@@ -53,7 +53,7 @@ class Scorer(torch.nn.Module):
             self.encoder = SingleEncoder(opt, pretrained_encoder=pretrained_encoder, encoder_config=encoder_config)
         else:
             self.encoder = BiEncoder(opt, pretrained_encoder=pretrained_encoder, encoder_config=encoder_config)
-        self.hidden_dim = self.encoder.config.emb_dim
+        self.hidden_dim = self.encoder.encoder_config.emb_dim
         
         # Dropout layer
         self.dropout = torch.nn.Dropout(p=opt.dropout_prob, inplace=False)
@@ -194,7 +194,7 @@ class Scorer(torch.nn.Module):
         - cand_inputs: dict containing cand_encs (2-D)
 
         """
-        logits = self.compute_scores(query_inputs["query_enc"], cand_inputs["cand_encs"])
+        logits = self.score_candidates(query_inputs["query_enc"], cand_inputs["cand_encs"])
         if convert_logits_to_probs:
             return self.convert_logits_to_probs(logits)
         else:
@@ -231,9 +231,9 @@ class BiEncoder(torch.nn.Module):
             self.encoder_q = deepcopy(pretrained_encoder)
             self.encoder_c = deepcopy(pretrained_encoder)
             
-        # Check if we freeze the candidate encoder
-        self.freeze_cand_encoder = opt.freeze_cand_encoder
-        self.freeze_query_encoder = opt.freeze_query_encoder
+        # Check if we freeze the encoders
+        self.freeze_cand_encoder = opt.freeze_encoder
+        self.freeze_query_encoder = opt.freeze_encoder
         for p in self.encoder_c.parameters():
             if self.freeze_cand_encoder:
                 p.requires_grad = False
@@ -245,6 +245,8 @@ class BiEncoder(torch.nn.Module):
             else:
                 p.requires_grad = True
 
+        # Store encoder confi
+        self.encoder_config = self.encoder_q.config
         
     def encode_candidates(self, inputs):
         """ Encode candidates.
@@ -314,6 +316,8 @@ class SingleEncoder(torch.nn.Module):
             else:
                 p.requires_grad = True
 
+        # Store encoder confi
+        self.encoder_config = self.encoder.config
                 
     def encode(self, inputs):
         """ Encode strings (either queries or candidates).

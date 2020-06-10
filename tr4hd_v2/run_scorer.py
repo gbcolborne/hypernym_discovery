@@ -64,7 +64,7 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
     
-def encode_batch(opt, model, tokenizer, batch, grad=False):
+def encode_batch(opt, model, tokenizer, batch, input_type, grad=False):
     """ Encode batch of queries or candidates. 
 
     Args:
@@ -72,18 +72,27 @@ def encode_batch(opt, model, tokenizer, batch, grad=False):
     - model
     - tokenizer
     - batch: tuple of input tensors (input_ids and nb_tokens)
+    - input_type: "queries" or "candidates"
 
     """
+    assert input_type in ["queries", "candidates"]
     batch = tuple(t.to(opt.device) for t in batch)
     input_ids = batch[0]
     nb_tokens = batch[1]
     inputs = {'input_ids':input_ids}
     inputs.update(get_missing_inputs(opt, input_ids, nb_tokens, tokenizer.lang2id[opt.lang]))
-    if grad:
-        encs = model.encode(inputs) 
-    else:
-        with torch.no_grad():
-            encs = model.encode(inputs) 
+    if input_type == "queries":
+        if grad:
+            encs = model.encode_queries(inputs)
+        else:
+            with torch.no_grad():
+                encs = model.encode_queries(inputs) 
+    elif input_type == "candidates":
+        if grad:
+            encs = model.encode_candidates(inputs)
+        else:
+            with torch.no_grad():
+                encs = model.encode_candidates(inputs) 
     return encs
 
 
@@ -100,8 +109,9 @@ def encode_all_inputs(opt, model, tokenizer, inputs, grad=False, these_are_candi
     sampler = SequentialSampler(inputs)
     dataloader = DataLoader(inputs, sampler=sampler, batch_size=batch_size)
     all_encs = []
-    for batch in tqdm(dataloader, desc="Encoding {}".format("candidates" if these_are_candidates else "queries"), leave=False):
-        encs = encode_batch(opt, model, tokenizer, batch, grad=grad)
+    input_type = "candidates" if these_are_candidates else "queries"
+    for batch in tqdm(dataloader, desc="Encoding {}".format(input_type), leave=False):
+        encs = encode_batch(opt, model, tokenizer, batch, input_type, grad=grad)
         all_encs.append(encs)
     all_encs = torch.cat(all_encs)
     return all_encs
@@ -138,7 +148,7 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
     batch_start = 0
     for batch in tqdm(dataloader, desc="Predicting", leave=False):
         # Encode batch of candidates
-        cand_encs = encode_batch(opt, model, tokenizer, batch, grad=False)
+        cand_encs = encode_batch(opt, model, tokenizer, batch, "candidates", grad=False)
         batch_size = len(cand_encs)
         # Score this batch for all queries
         for query_ix in range(len(query_encs)):
@@ -393,7 +403,7 @@ def train(opt, model, tokenizer):
             # Encode queries
             model.train()
             query_batch = (query_input_ids, query_nb_tokens)
-            query_encs = encode_batch(opt, model, tokenizer, query_batch, grad=True)
+            query_encs = encode_batch(opt, model, tokenizer, query_batch, "queries", grad=True)
 
             # Loop over queries
             scores = []
@@ -402,7 +412,7 @@ def train(opt, model, tokenizer):
                 cand_input_ids_sub = cand_input_ids[cand_ids[query_ix]]
                 cand_nb_tokens_sub = cand_nb_tokens[cand_ids[query_ix]]
                 cand_batch = (cand_input_ids_sub, cand_nb_tokens_sub)
-                cand_encs = encode_batch(opt, model, tokenizer, cand_batch, grad=True)
+                cand_encs = encode_batch(opt, model, tokenizer, cand_batch, "candidates", grad=True)
 
                 # Forward pass
                 scores_sub = model({'query_enc': query_encs[query_ix]}, {'cand_encs':cand_encs}, convert_logits_to_probs=True)
