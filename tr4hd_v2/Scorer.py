@@ -49,7 +49,7 @@ class Scorer(torch.nn.Module):
             self.spon_epsilon = torch.tensor(opt.spon_epsilon, dtype=torch.float32)
             
         # Make encoder
-        if self.encoding_arch == "single"
+        if self.encoding_arch == "single":
             self.encoder = SingleEncoder(opt, pretrained_encoder=pretrained_encoder, encoder_config=encoder_config)
         else:
             self.encoder = BiEncoder(opt, pretrained_encoder=pretrained_encoder, encoder_config=encoder_config)
@@ -168,7 +168,7 @@ class Scorer(torch.nn.Module):
         return scores
 
 
-    def softmax(self, logits)
+    def softmax(self, logits):
         """ Exponentiate and normalize scores (i.e. compute softmax) for a single query (numerically stable).
 
         Args:
@@ -272,7 +272,7 @@ class BiEncoder(torch.nn.Module):
         return encs
         
         
-    def forward(self, inputs)
+    def forward(self, inputs):
         """ Dummy forward function. """
         return
 

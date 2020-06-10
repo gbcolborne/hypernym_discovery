@@ -545,7 +545,7 @@ def main():
                         help="Encoding architecture")
     parser.add_argument("--transform", choices=['none', 'scaling', 'projection', 'highway'], default='none',
                         help="Transformation function applied to encodings before scoring")
-    parser.add_argument("--score_fn", choices=['dot', 'spon'], default='dot'
+    parser.add_argument("--score_fn", choices=['dot', 'spon'], default='dot',
                         help="Score function")
     parser.add_argument("--spon_epsilon", type=float, default=1e-5,
                         help=("Positive real value of epsilon in the SPON distance from satisfaction"
