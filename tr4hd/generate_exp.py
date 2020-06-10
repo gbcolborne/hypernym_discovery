@@ -83,12 +83,7 @@ for i in range(NB_TESTS):
     uniq_name = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
     model_dir = "_".join([output_prefix, "Model", uniq_name])
     eval_dir = "_".join([output_prefix, "Eval", uniq_name])
-    if PSUB:
-        jobname = "%s_%s" % (output_prefix, uniq_name)
-        psub_cmd = get_psub_command(jobname) 
-        cmd = psub_cmd + " " + base_cmd
-    else:
-        cmd = base_cmd
+    cmd = base_cmd
     cmd += " --model_dir %s" % model_dir
     cmd += " --eval_dir %s" % eval_dir
     setting = {}
@@ -106,8 +101,12 @@ for i in range(NB_TESTS):
     if NOHUP:
         nohup_fn = "nohup_%s_%s.out" % (output_prefix, uniq_name)
         cmd += " > %s " % nohup_fn
-    cmds.append(cmd)
+    cmds.append((uniq_name, cmd))
     
 # Write commands
-for cmd in cmds:
+for (test_name, cmd) in cmds:
+    if PSUB:
+        jobname = "%s_%s" % (output_prefix, test_name)
+        psub_cmd = get_psub_command(jobname) 
+        cmd = '%s "%s"' % (psub_cmd, cmd)
     print(cmd + " " + DELIM)
