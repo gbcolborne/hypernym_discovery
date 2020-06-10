@@ -159,7 +159,7 @@ def get_model_predictions(opt, model, tokenizer, query_inputs, cand_inputs):
             
     # Convert logits to probabilities
     all_scores = torch.tensor(all_scores, dtype=torch.float32)
-    y_probs = model.convert_logits_to_probs(all_scores, dim=1)
+    y_probs = model.convert_logits_to_probs(all_scores)
     y_probs = y_probs.detach().cpu().numpy()
     return y_probs
 
