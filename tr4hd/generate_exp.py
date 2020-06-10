@@ -7,15 +7,16 @@ from cluster_utils import get_psub_command, get_base_command
 
 # User-defined constants
 NOHUP = False    # Run with nohup
-PSUB = False     # Run with psub
+PSUB = True     # Run with psub
 CUDA_DEVICES="0"
-MAX_TESTS = 32
-SEED = 91500
+NB_TESTS = 100
+SEED = None
 DELIM = ";"
 
 # Seed RNGs
-random.seed(SEED)
-np.random.seed(SEED)
+if SEED:
+    random.seed(SEED)
+    np.random.seed(SEED)
 
 # Initialize command template and list of commands
 cmds = []
@@ -77,25 +78,8 @@ named_param_values = {"ea": ["single", "bi"],
                       "wd": ["0", "1e-1", "1e-3", "1e-5", "1e-7"],
                       }
 
-# Generate all combinations
-settings = [{}]
-for key, values in named_param_values.items():
-    tmp = []
-    for setting in settings:
-        for value in values:
-            # Add value for this key to this setting
-            new_setting = deepcopy(setting)
-            new_setting[key] = value
-            tmp.append(new_setting)
-    settings = tmp[:]
-
-# Take a random sample of settings
-np.random.shuffle(settings)
-if len(settings) > MAX_TESTS:
-    settings = settings[:MAX_TESTS]
-    
-# Make custom command for each test
-for setting in settings:
+# Generate random settings
+for i in range(NB_TESTS):
     uniq_name = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
     model_dir = "_".join([output_prefix, "Model", uniq_name])
     eval_dir = "_".join([output_prefix, "Eval", uniq_name])
@@ -107,6 +91,9 @@ for setting in settings:
         cmd = base_cmd
     cmd += " --model_dir %s" % model_dir
     cmd += " --eval_dir %s" % eval_dir
+    setting = {}
+    for k,v in named_param_values.items():
+        setting[k] = random.choice(v)
     for k,v in setting.items():
         param_name = param_key_to_name[k]
         # Args
