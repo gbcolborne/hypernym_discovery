@@ -1,20 +1,16 @@
 import random, string
 from copy import deepcopy
 import numpy as np
+from cluster_utils import get_psub_command
 
 """ Generate script for random hyperparameter search. """
 
 # User-defined constants
 NOHUP = True    # Run with nohup
 PSUB = True     # Run with psub
-JOBNAME_PLACEHOLDER = "<JOBNAME_PLACEHOLDER>"
-PSUB_CMD = "psub -P nrc_ict -uc -ug -N {} -cpus 1 -mem 24G -gpu -l res_gpus=1 -l res_gputype=k80 -l h_rt=172800".format(JOBNAME_PLACEHOLDER)
 CUDA_DEVICES="0"
 MAX_TESTS = 32
 SEED = 91500
-
-def get_psub_command(jobname):
-    return PSUB_CMD.replace(JOBNAME_PLACEHOLDER, jobname)
 
 # Seed RNGs
 random.seed(SEED)
