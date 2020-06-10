@@ -1,7 +1,7 @@
 import random, string
 from copy import deepcopy
 import numpy as np
-from cluster_utils import get_psub_command
+from cluster_utils import get_psub_command, get_base_command
 
 """ Generate script for random hyperparameter search. """
 
@@ -18,10 +18,10 @@ np.random.seed(SEED)
 
 # Initialize command template and list of commands
 cmds = []
-base_cmd = ""
+base_cmd = get_base_command()
 
 # Constant part of our training command
-base_cmd += "CUDA_VISIBLE_DEVICES=%s" % CUDA_DEVICES
+base_cmd += " CUDA_VISIBLE_DEVICES=%s" % CUDA_DEVICES
 if NOHUP:
     base_cmd += " nohup"
 base_cmd += " python run_scorer.py"
