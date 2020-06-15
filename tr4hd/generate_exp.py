@@ -77,9 +77,14 @@ named_param_values = {"ea": ["single", "bi"],
                       "dp": ["0.0", "0.1", "0.2", "0.4"],
                       "wd": ["0", "1e-1", "1e-3", "1e-5", "1e-7"],
                       }
-
+def settings_are_valid(settings):
+    # If encoder is frozen, there must be a transform, otherwise the model has no tunable params
+    if settings["fe"] is True and settings["tr"] == "none":
+        return False
+    return True
+    
 # Generate random settings
-for i in range(NB_TESTS):
+while len(cmds) < NB_TESTS:
     uniq_name = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
     model_dir = "_".join([output_prefix, "Model", uniq_name])
     eval_dir = "_".join([output_prefix, "Eval", uniq_name])
@@ -89,6 +94,8 @@ for i in range(NB_TESTS):
     setting = {}
     for k,v in named_param_values.items():
         setting[k] = random.choice(v)
+    if not settings_are_valid(setting):
+        continue
     for k,v in setting.items():
         param_name = param_key_to_name[k]
         # Args
