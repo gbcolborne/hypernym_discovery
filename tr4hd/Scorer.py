@@ -185,10 +185,10 @@ class Scorer(torch.nn.Module):
         """ Exponentiate and normalize scores (i.e. compute softmax) for a single query (numerically stable).
 
         Args:
-        - logits: 1-D tensor of logits for a single query
+        - logits: 1-D tensor of logits for a single query or 2-D tensor where each row contains the logits of a query.
 
         """
-        assert len(logits.size()) == 1
+        assert len(logits.size()) in [1, 2]
         softmax = torch.exp(logits - torch.logsumexp(logits, 0))
         return softmax
 
