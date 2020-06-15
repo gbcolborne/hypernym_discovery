@@ -235,7 +235,8 @@ def compute_loss(opt, y_probs, targets, reduction='none'):
     assert len(targets.size()) == 1
     assert targets.size()[0] == y_probs.size()[0]    
     if opt.loss_fn == "nll":
-        loss = F.nll_loss(y_probs, targets, reduction=reduction)
+        log_probs = torch.log(y_probs)
+        loss = F.nll_loss(log_probs, targets, reduction=reduction)
         return loss
     elif opt.loss_fn == "nllmod":
         target_probs = y_probs[:,targets]
@@ -459,7 +460,7 @@ def train(opt, model, tokenizer):
 
                 # Log loss, gradient norm
                 loss_scalar = (training_loss - logging_loss) / opt.logging_steps
-                logs['train_loss'] = loss_scalar 
+                logs['train_loss'] = loss_scalar
                 logging_loss = training_loss
                 grad_norm = (training_grad_norm - logging_grad_norm) / opt.logging_steps
                 logs['norm_w_grad'] = grad_norm
