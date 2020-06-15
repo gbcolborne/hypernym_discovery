@@ -54,7 +54,7 @@ class Scorer(torch.nn.Module):
         else:
             self.encoder = BiEncoder(opt, pretrained_encoder=pretrained_encoder, encoder_config=encoder_config)
         self.hidden_dim = self.encoder.encoder_config.emb_dim
-        
+
         # Dropout layer
         self.dropout = torch.nn.Dropout(p=opt.dropout_prob, inplace=False)
                 
@@ -82,7 +82,8 @@ class Scorer(torch.nn.Module):
         - inputs: dict containing input_ids, attention_mask, token_type_ids, langs
 
         """
-        return self.encoder.encode_queries(inputs)
+        encs = self.encoder.encode_queries(inputs)
+        return encs
 
     
     def encode_candidates(self, inputs):
@@ -92,7 +93,8 @@ class Scorer(torch.nn.Module):
         - inputs: dict containing input_ids, attention_mask, token_type_ids, langs
 
         """
-        return self.encoder.encode_candidates(inputs)
+        encs = self.encoder.encode_candidates(inputs)
+        return encs
 
     
     def compute_distance_to_satisfaction(self, query_enc, cand_encs):
@@ -159,12 +161,23 @@ class Scorer(torch.nn.Module):
             proj = F.relu(self.projector(query_enc))
             gate = torch.sigmoid(self.proj_gate(query_enc))
             query_enc = (gate * proj) + ((1-gate) * query_enc)
-            
+
+        # Check for NaN
+        #if torch.isnan(query_enc).any():
+        #    query_enc = query_enc.masked_fill(torch.isnan(query_enc), 0)
+        #if torch.isnan(cand_encs).any():
+        #    cand_encs = cand_encs.masked_fill(torch.isnan(cand_encs), 0)
+        assert not torch.isnan(query_enc).any()
+        assert not torch.isnan(cand_encs).any()        
+
         # Compute scores
         if self.score_fn == 'dot':
             scores = self.compute_dot_product(query_enc, cand_encs)
         elif self.score_fn == 'spon':
             scores = self.compute_distance_to_satisfaction(query_enc, cand_encs)
+
+        # Check for NaN
+        assert not torch.isnan(scores).any()
         return scores
 
 
@@ -175,10 +188,8 @@ class Scorer(torch.nn.Module):
         - logits: 1-D tensor of logits for a single query
 
         """
-        max_logit = torch.max(logits)
-        exp = torch.exp(logits - max_logit)
-        sum_exp = torch.sum(exp)
-        softmax = exp / sum_exp
+        assert len(logits.size()) == 1
+        softmax = torch.exp(logits - torch.logsumexp(logits, 0))
         return softmax
 
 
@@ -194,7 +205,7 @@ class Scorer(torch.nn.Module):
         - cand_inputs: dict containing cand_encs (2-D)
 
         """
-        logits = self.score_candidates(query_inputs["query_enc"], cand_inputs["cand_encs"])
+        logits = self.score_candidates(query_inputs["query_enc"], cand_inputs["cand_encs"])        
         if convert_logits_to_probs:
             return self.convert_logits_to_probs(logits)
         else:
