@@ -735,7 +735,8 @@ def main():
         logger.info("  Training/evaluation parameters %s", opt)
         global_step, tr_loss = train(opt, model, tokenizer)
         logger.info("    global_step = %s, average loss = %s", global_step, tr_loss)
-
+        results = {"global_step": global_step, "tr_loss": tr_loss}
+        
         # Save model and tokenizer
         if opt.local_rank == -1 or torch.distributed.get_rank() == 0:
             logger.info("  Saving model to %s", opt.model_dir)
@@ -757,7 +758,7 @@ def main():
         cand_inputs = make_candidate_set(opt, tokenizer, dev_data, verbose=True)
 
         # Load tokenizer and model
-        eval_results = evaluate(opt, model, tokenizer, dev_set, cand_inputs)
+        results = evaluate(opt, model, tokenizer, dev_set, cand_inputs)
         logger.info("***** Evaluation Results *****")
         for k, v in eval_results.items():
             print("{}: {}".format(k, v))
@@ -765,7 +766,7 @@ def main():
     # Prediction on test set
     if opt.do_pred and opt.local_rank in [-1, 0]:
         predict(opt, model, tokenizer)
-        eval_results = None
+        results = None
 
     return eval_results
 
