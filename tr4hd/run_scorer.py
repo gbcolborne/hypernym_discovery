@@ -235,18 +235,16 @@ def compute_loss(opt, y_probs, targets, reduction='none'):
     assert len(targets.size()) == 1
     assert targets.size()[0] == y_probs.size()[0]    
     if opt.loss_fn == "nll":
-        log_probs = torch.log(y_probs)
-        loss = F.nll_loss(log_probs, targets, reduction=reduction)
-        return loss
+        losses = F.nll_loss(y_probs, targets, reduction='none')
     elif opt.loss_fn == "nllmod":
         target_probs = y_probs[:,targets]
         losses = -torch.log(target_probs)
-        if reduction == "none":
-            return losses
-        elif reduction == "sum":
-            return torch.sum(losses)
-        elif reduction == "mean":
-            return torch.mean(losses)
+    if reduction == "none":
+        return losses
+    elif reduction == "sum":
+        return torch.sum(losses)
+    elif reduction == "mean":
+        return torch.mean(losses)
 
         
 def evaluate(opt, model, tokenizer, eval_data, cand_inputs):
