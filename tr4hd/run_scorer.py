@@ -39,20 +39,21 @@ RANKING_CUTOFF = 15
 
 
 def load_model_and_tokenizer(opt, encoder_config, tokenizer_class):
-    # Load training options
+    # Load options used to train the model
     train_opt = torch.load(os.path.join(opt.model_dir, 'training_args.bin'))
-
-    # Add missing options to opt
-    for k,v in train_opt._get_kwargs():
-        if k not in opt or (k in opt and opt.__dict__[k] is None and train_opt.__dict__[k] is not None):
-            opt.__dict__[k] = v
+    
+    # Add any extra options included in opt
+    for k,v in opt._get_kwargs():
+        if k not in train_opt or (k in train_opt and train_opt.__dict__[k] is None and opt.__dict__[k] is not None):
+            train_opt.__dict__[k] = v
     
     # Load tokenizer
     tokenizer = tokenizer_class.from_pretrained(opt.model_dir, do_lower_case=opt.do_lower_case)
     
     # Load model
-    model = Scorer(opt, pretrained_encoder=None, encoder_config=encoder_config)
-    model.load_state_dict(torch.load(os.path.join(opt.model_dir, 'state_dict.pt')))
+    model = Scorer(train_opt, pretrained_encoder=None, encoder_config=encoder_config)
+    state_dict = torch.load(os.path.join(opt.model_dir, 'state_dict.pt'))
+    model.load_state_dict(state_dict)
     model.to(opt.device)
     return model, tokenizer
 
@@ -236,6 +237,8 @@ def compute_loss(opt, y_probs, targets, reduction='none'):
     assert targets.size()[0] == y_probs.size()[0]    
     if opt.loss_fn == "nll":
         losses = F.nll_loss(y_probs, targets, reduction='none')
+        #losses = -losses
+        losses = losses + torch.tensor(1, dtype=torch.float32)
     elif opt.loss_fn == "nllmod":
         target_probs = y_probs[:,targets]
         losses = -torch.log(target_probs)
