@@ -193,7 +193,7 @@ class Scorer(torch.nn.Module):
         if nb_axes == 1:
             softmax = torch.exp(logits - torch.logsumexp(logits, 0))
         elif nb_axes == 2:
-            softmax = torch.exp(logits - torch.logsumexp(logits, 1))
+            softmax = torch.exp(logits - torch.logsumexp(logits, 1, keepdim=True))
         return softmax
 
 
