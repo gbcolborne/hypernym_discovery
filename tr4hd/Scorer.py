@@ -14,6 +14,22 @@ MODEL_CLASSES = {
 }
 
 
+def softmax(logits):
+    """ Exponentiate and normalize un-normalized scores (i.e. compute softmax) for one or more queries. Numerically stable.x
+    
+    Args:
+    - logits: 1-D tensor of logits for a single query or 2-D tensor where each *row* contains the logits of a query.
+
+    """
+    nb_axes = len(logits.size())
+    assert nb_axes in [1, 2]
+    if nb_axes == 1:
+        softmax = torch.exp(logits - torch.logsumexp(logits, 0))
+    elif nb_axes == 2:
+        softmax = torch.exp(logits - torch.logsumexp(logits, 1, keepdim=True))
+    return softmax
+
+
 class Scorer(torch.nn.Module):
     """ Scoring module. """
 
@@ -181,24 +197,8 @@ class Scorer(torch.nn.Module):
         return scores
 
 
-    def softmax(self, logits):
-        """ Exponentiate and normalize scores (i.e. compute softmax) for a single query (numerically stable).
-
-        Args:
-        - logits: 1-D tensor of logits for a single query or 2-D tensor where each *row* contains the logits of a query.
-
-        """
-        nb_axes = len(logits.size())
-        assert nb_axes in [1, 2]
-        if nb_axes == 1:
-            softmax = torch.exp(logits - torch.logsumexp(logits, 0))
-        elif nb_axes == 2:
-            softmax = torch.exp(logits - torch.logsumexp(logits, 1, keepdim=True))
-        return softmax
-
-
     def convert_logits_to_probs(self, logits):
-        return self.softmax(logits)
+        return softmax(logits)
 
     
     def forward(self, query_inputs, cand_inputs, convert_logits_to_probs=False):

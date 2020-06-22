@@ -23,7 +23,7 @@ from transformers import XLMConfig, XLMModel, XLMTokenizer
 from transformers import AdamW
 from sklearn.metrics import average_precision_score
 from data_utils import make_train_set, make_dev_set, make_test_set, make_candidate_set, load_hd_data, rotate_checkpoints, get_missing_inputs
-from Scorer import Scorer
+from Scorer import Scorer, softmax
 
 
 logger = logging.getLogger(__name__)
@@ -227,21 +227,41 @@ def predict(opt, model, tokenizer):
     return
 
 
-def compute_loss(opt, y_probs, targets, reduction='none'):
+def compute_loss(opt, y_logits, targets, reduction='none'):
     """ Compute loss.
 
+    Args:
+    - opt
+    - y_logits: 2-D tensor where each *row* contains the logits of a single query
+    - targets: 1-D tensor of target indices
+
     """
-    assert reduction in ['none', 'sum', 'mean']    
-    assert len(y_probs.size()) == 2
+    assert reduction in ['none', 'sum', 'mean']
+    assert opt.loss_fn in ['nll', 'bce', 'nolog']
+    assert len(y_logits.size()) == 2
     assert len(targets.size()) == 1
-    assert targets.size()[0] == y_probs.size()[0]    
+    assert targets.size()[0] == y_logits.size()[0]    
+
+    # Compute losses for all examples in batch
     if opt.loss_fn == "nll":
-        losses = F.nll_loss(y_probs, targets, reduction='none')
-        #losses = -losses
+        # Negative loss likelihood.
+        losses = F.cross_entropy(y_logits, targets, reduction='none')
+    elif opt.loss_fn == "bce":
+        # Binary cross-entropy, summed across logits for each query
+        y_probs = softmax(y_logits)
+        batch_size, nb_logits = y_logits.size()
+        targets_onehot = torch.FloatTensor(batch_size, nb_logits)
+        targets_onehot.zero_()
+        targets_onehot.scatter_(1,targets.view(-1,1),value=1.0)
+        losses = F.binary_cross_entropy(y_probs, targets_onehot, reduction='none')
+        losses = torch.sum(losses, dim=1)
+    elif opt.loss_fn == "nolog":
+        # Similar to 'nll', but we omit the log and add 1 to get a loss between 0 and 1
+        y_probs = softmax(y_logits)
+        losses = F.nll_loss(y_logits, targets, reduction='none')
         losses = losses + torch.tensor(1, dtype=torch.float32)
-    elif opt.loss_fn == "nllmod":
-        target_probs = y_probs[:,targets]
-        losses = -torch.log(target_probs)
+    
+    # Reduction
     if reduction == "none":
         return losses
     elif reduction == "sum":
@@ -408,7 +428,7 @@ def train(opt, model, tokenizer):
             query_encs = encode_batch(opt, model, tokenizer, query_batch, "queries", grad=True)
 
             # Loop over queries
-            scores = []
+            logits = []
             for query_ix in range(bs):
                 # Encode the candidates for this query
                 cand_input_ids_sub = cand_input_ids[cand_ids[query_ix]]
@@ -417,12 +437,12 @@ def train(opt, model, tokenizer):
                 cand_encs = encode_batch(opt, model, tokenizer, cand_batch, "candidates", grad=True)
 
                 # Forward pass
-                scores_sub = model({'query_enc': query_encs[query_ix]}, {'cand_encs':cand_encs}, convert_logits_to_probs=True)
-                scores.append(scores_sub.unsqueeze(0))
+                logits_sub = model({'query_enc': query_encs[query_ix]}, {'cand_encs':cand_encs}, convert_logits_to_probs=False)
+                logits.append(logits_sub.unsqueeze(0))
 
             # Compute loss
-            scores = torch.cat(scores, dim=0)
-            loss = compute_loss(opt, scores, labels, reduction='mean')
+            logits = torch.cat(logits, dim=0)
+            loss = compute_loss(opt, logits, labels, reduction='mean')
             if opt.n_gpu > 1:
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
 
@@ -577,7 +597,7 @@ def main():
                         help="Real number between 0 and 1 that controls how aggressively we subsample positive examples during training")
 
     # Training paramaters
-    parser.add_argument("--loss_fn", choices=["nll", "nllmod"], default="nll",
+    parser.add_argument("--loss_fn", choices=["nll", "nolog"], default="nll",
                         help="Loss function used for training")
     parser.add_argument("--learning_rate", default=1e-3, type=float,
                         help="The initial learning rate for Adam.")
