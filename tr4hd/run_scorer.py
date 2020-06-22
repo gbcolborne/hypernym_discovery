@@ -628,7 +628,7 @@ def main():
                         help="Real number between 0 and 1 that controls how aggressively we subsample positive examples during training")
 
     # Training paramaters
-    parser.add_argument("--loss_fn", choices=["nll", "nolog"], default="nll",
+    parser.add_argument("--loss_fn", choices=["nll", "bce", "nolog"], default="nll",
                         help="Loss function used for training")
     parser.add_argument("--loss_weighting", choices=["none", "npos"], default="none",
                         help=("How to weight loss for each query "

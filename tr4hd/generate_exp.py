@@ -50,6 +50,7 @@ param_key_to_name = {"ea": "encoding_arch",
                      "sf": "score_fn",
                      "ep": "spon_epsilon",
                      "lf": "loss_fn",
+                     "lw": "loss_weighting",
                      "bs": "per_gpu_train_batch_size",
                      "ng": "nb_neg_samples",
                      "sn": "smoothe_neg_sampling",
@@ -58,6 +59,7 @@ param_key_to_name = {"ea": "encoding_arch",
                      "lr": "learning_rate",
                      "dp": "dropout_prob",
                      "wd": "weight_decay",
+                     "wn": "weight_decay_norm",
                      }
 
 # Set param values we want to test. For flags, use True or False. For args, use strings.
@@ -67,7 +69,8 @@ named_param_values = {"ea": ["single", "bi"],
                       "tr": ["none", "scaling", "projection", "highway"],
                       "sf": ["dot", "spon"],
                       "ep": ["1e-1", "1e-3", "1e-5", "1e-7"],                      
-                      "lf": ["nll", "nllmod"],
+                      "lf": ["nll", "bce", "nolog"],
+                      "lw": ["none", "npos"],
                       "bs": ["8", "16", "32"],
                       "ng": ["4", "8", "16"],
                       "sn": [True, False],
@@ -76,7 +79,9 @@ named_param_values = {"ea": ["single", "bi"],
                       "lr": ["1e-3", "1e-4", "1e-5", "1e-6"],                      
                       "dp": ["0.0", "0.1", "0.2", "0.4"],
                       "wd": ["0", "1e-1", "1e-3", "1e-5", "1e-7"],
+                      "wn": ["L1", "L2"],
                       }
+
 def settings_are_valid(settings):
     # If encoder is frozen, there must be a transform, otherwise the model has no tunable params
     if settings["fe"] is True and settings["tr"] == "none":
