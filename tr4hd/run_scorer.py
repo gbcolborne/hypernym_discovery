@@ -227,6 +227,18 @@ def predict(opt, model, tokenizer):
     return
 
 
+def compute_weight_decay_penalty(opt, model):
+    """ Compute weight decay penalty """
+    if opt.weight_decay_norm == "L2":
+        # Not implemented, as it is built into the Adam optimizer
+        return None
+    if opt.weight_decay_norm == "L1":
+        to_decay = torch.cat([p.view(-1) for n,p in model.named_parameters() if not any(nd in n for nd in opt.no_decay)])
+        penalty = opt.weight_decay * torch.norm(to_decay, 1)
+        return penalty
+        
+
+
 def compute_loss(opt, y_logits, targets, weights=None, reduction='none'):
     """ Compute loss.
 
@@ -373,10 +385,10 @@ def train(opt, model, tokenizer):
         total_steps = opt.num_train_epochs * len(train_dataloader) 
         
     # Prepare optimizer 
-    no_decay = ['bias', 'LayerNorm.weight']
+    opt.no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': opt.weight_decay},
-        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in opt.no_decay)], 'weight_decay': opt.weight_decay if opt.weight_decay_norm=="L2" else 0},
+        {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in opt.no_decay)], 'weight_decay': 0.0}
         ]
     optimizer = AdamW(optimizer_grouped_parameters, lr=opt.learning_rate, eps=opt.adam_epsilon)
     if opt.fp16:
@@ -457,8 +469,13 @@ def train(opt, model, tokenizer):
             else:
                 weights = None
             loss = compute_loss(opt, logits, labels, weights, reduction='mean')
+            if opt.weight_decay_norm == "L1":
+                penalty = compute_weight_decay_penalty(opt, model)
+                loss = loss + penalty
+                
+            # mean() to average on multi-gpu parallel training
             if opt.n_gpu > 1:
-                loss = loss.mean() # mean() to average on multi-gpu parallel training
+                loss = loss.mean() 
 
             # Backprop
             if opt.fp16:
@@ -622,6 +639,8 @@ def main():
                         help="Probability of zeroing out values in the query and candidate encodings.")
     parser.add_argument("--weight_decay", default=0.0, type=float,
                         help="Weight decay if we apply some.")
+    parser.add_argument("--weight_decay_norm", choices=["L1", "L2"], default="L2",
+                        help="Norm used for weight decay (if --weight_decay is positive)")
     parser.add_argument("--adam_epsilon", default=1e-8, type=float,
                         help="Epsilon for Adam optimizer.")
     parser.add_argument("--max_grad_norm", default=None, type=float, required=False,
