@@ -1,11 +1,11 @@
-import random, string
+import random, string, argparse
 from copy import deepcopy
 import numpy as np
 from cluster_utils import get_psub_command, get_base_command
 
 """ Generate script for random hyperparameter search. """
 
-# User-defined constants
+# Constants
 NOHUP = False    # Run with nohup
 PSUB = True     # Run with psub
 CUDA_DEVICES="0"
@@ -13,10 +13,14 @@ NB_TESTS = 100
 SEED = None
 DELIM = ";"
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--seed", type=int, default=None, help="Seed for RNGs (if you want to seed them)")
+args = parser.parse_args()
+
 # Seed RNGs
-if SEED:
-    random.seed(SEED)
-    np.random.seed(SEED)
+if args.seed is not None:
+    random.seed(args.seed)
+    np.random.seed(args.seed)
 
 # Initialize command template and list of commands
 cmds = []
