@@ -96,12 +96,14 @@ def make_train_set(opt, tokenizer, train_data, seed=0, verbose=False):
 
     # Negative sampling
     queries_dup = []
+    nb_gold = []
     cand_ids = []
     labels = []
     order = list(range(opt.nb_neg_samples + 1))
     for i in range(nb_queries):
         for j in range(len(gold_cand_ids[i])):
             queries_dup.append(queries[i])
+            nb_gold.append(len(q2gold[queries[i]]))
             cand_id_sample = []
             # Sample negative examples
             while len(cand_id_sample) < opt.nb_neg_samples:
@@ -127,12 +129,23 @@ def make_train_set(opt, tokenizer, train_data, seed=0, verbose=False):
     order = list(range(len(queries_dup)))
     np.random.shuffle(order)
     queries_dup = [queries_dup[i] for i in order]
+    nb_gold = [nb_gold[i] for i in order]
     cand_ids = [cand_ids[i] for i in order]
     labels = [labels[i] for i in order]
-    
+
     # Encode queries
     query_input_ids, query_nb_tokens = encode_string_inputs(opt, tokenizer, queries_dup, verbose=verbose)
 
+    # Compute query weights
+    if opt.loss_weighting == 'none':
+        query_weights = torch.ones(len(queries_dup), dtype=torch.float32, requires_grad=False, device=opt.device)
+    elif opt.loss_weighting == 'npos':
+        query_weights = [1/x for x in nb_gold]
+        query_weights = torch.tensor(query_weights, dtype=torch.float32, requires_grad=False, device=opt.device)
+    cand_ids = torch.tensor(cand_ids, dtype=torch.long, requires_grad=False, device=opt.device)
+    labels = torch.tensor(labels, dtype=torch.long, requires_grad=False, device=opt.device)
+    dataset = TensorDataset(query_input_ids, query_nb_tokens, query_weights, cand_ids, labels)
+                                   
     # Log a few examples
     if verbose:
         for i in range(5):
@@ -141,12 +154,11 @@ def make_train_set(opt, tokenizer, train_data, seed=0, verbose=False):
             logger.info("  query: %s" % queries_dup[i])
             logger.info("  query token IDs: {}".format(query_input_ids[i]))
             logger.info("  nb tokens (without padding): {}".format(query_nb_tokens[i]))
+            logger.info("  nb gold hypernyms: {}".format(nb_gold[i]))
+            logger.info("  query weight: {}".format(query_weights[i]))
             logger.info("  candidate ids: %s" % " ".join([str(x) for x in cand_ids[i]]))
             logger.info("  label: %d" % labels[i])
 
-    cand_ids = torch.tensor(cand_ids, dtype=torch.long, requires_grad=False, device=opt.device)
-    labels = torch.tensor(labels, dtype=torch.long, requires_grad=False, device=opt.device)
-    dataset = TensorDataset(query_input_ids, query_nb_tokens, cand_ids, labels)
     return dataset
 
 

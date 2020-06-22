@@ -227,13 +227,14 @@ def predict(opt, model, tokenizer):
     return
 
 
-def compute_loss(opt, y_logits, targets, reduction='none'):
+def compute_loss(opt, y_logits, targets, weights=None, reduction='none'):
     """ Compute loss.
 
     Args:
     - opt
     - y_logits: 2-D tensor where each *row* contains the logits of a single query
     - targets: 1-D tensor of target indices
+    - weights: optional 1-D tensor of query weights 
 
     """
     assert reduction in ['none', 'sum', 'mean']
@@ -241,7 +242,10 @@ def compute_loss(opt, y_logits, targets, reduction='none'):
     assert len(y_logits.size()) == 2
     assert len(targets.size()) == 1
     assert targets.size()[0] == y_logits.size()[0]    
-
+    if weights is not None:
+        assert len(weights.size()) == 1
+        assert weights.size()[0] == targets.size()[0]
+        
     # Compute losses for all examples in batch
     if opt.loss_fn == "nll":
         # Negative loss likelihood.
@@ -260,7 +264,11 @@ def compute_loss(opt, y_logits, targets, reduction='none'):
         y_probs = softmax(y_logits)
         losses = F.nll_loss(y_logits, targets, reduction='none')
         losses = losses + torch.tensor(1, dtype=torch.float32)
-    
+
+    # Weighting 
+    if weights is not None:
+        losses = losses * weights
+        
     # Reduction
     if reduction == "none":
         return losses
@@ -401,6 +409,7 @@ def train(opt, model, tokenizer):
                    opt.train_batch_size * (torch.distributed.get_world_size() if opt.local_rank != -1 else 1))
     logger.info("  Total optimization steps (one per batch of queries) = %d", total_steps)
     global_step = 0
+    WEIGHT_LOSSES = opt.loss_weighting != 'none'
     training_loss, logging_loss = 0.0, 0.0
     training_grad_norm, logging_grad_norm = 0.0, 0.0
     train_iterator = trange(int(opt.num_train_epochs), desc="Epoch", disable=opt.local_rank not in [-1, 0])
@@ -418,8 +427,9 @@ def train(opt, model, tokenizer):
             # Unpack batch
             query_input_ids = batch[0]
             query_nb_tokens = batch[1]
-            cand_ids = batch[2]
-            labels = batch[3]    
+            query_weights = batch[2]
+            cand_ids = batch[3]
+            labels = batch[4]    
             bs = query_input_ids.size()[0]
             
             # Encode queries
@@ -442,7 +452,11 @@ def train(opt, model, tokenizer):
 
             # Compute loss
             logits = torch.cat(logits, dim=0)
-            loss = compute_loss(opt, logits, labels, reduction='mean')
+            if WEIGHT_LOSSES:
+                weights = query_weights
+            else:
+                weights = None
+            loss = compute_loss(opt, logits, labels, weights, reduction='mean')
             if opt.n_gpu > 1:
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
 
@@ -599,6 +613,9 @@ def main():
     # Training paramaters
     parser.add_argument("--loss_fn", choices=["nll", "nolog"], default="nll",
                         help="Loss function used for training")
+    parser.add_argument("--loss_weighting", choices=["none", "npos"], default="none",
+                        help=("How to weight loss for each query "
+                              "('npos' means the weight is 1/h where h is the number of positive hypernyms in the training data for that query)"))
     parser.add_argument("--learning_rate", default=1e-3, type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--dropout_prob", default=0.0, type=float,
