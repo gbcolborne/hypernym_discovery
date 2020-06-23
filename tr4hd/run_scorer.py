@@ -244,7 +244,7 @@ def compute_loss(opt, y_logits, targets, weights=None, reduction='none'):
 
     Args:
     - opt
-    - y_logits: 2-D tensor where each *row* contains the logits of a single query
+    - y_logits: 2-D tensor where each *row* contains the logits (unnormalized scores) of a single query
     - targets: 1-D tensor of target indices
     - weights: optional 1-D tensor of query weights 
 
@@ -260,7 +260,7 @@ def compute_loss(opt, y_logits, targets, weights=None, reduction='none'):
         
     # Compute losses for all examples in batch
     if opt.loss_fn == "nll":
-        # Negative loss likelihood.
+        # Negative loss likelihood
         losses = F.cross_entropy(y_logits, targets, reduction='none')
     elif opt.loss_fn == "bce":
         # Binary cross-entropy, summed across logits for each query
@@ -472,7 +472,7 @@ def train(opt, model, tokenizer):
             if opt.weight_decay_norm == "L1":
                 penalty = compute_weight_decay_penalty(opt, model)
                 loss = loss + penalty
-                
+            
             # mean() to average on multi-gpu parallel training
             if opt.n_gpu > 1:
                 loss = loss.mean() 

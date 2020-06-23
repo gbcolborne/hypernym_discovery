@@ -209,7 +209,9 @@ class Scorer(torch.nn.Module):
         if self.score_fn == 'dot':
             scores = self.compute_dot_product(query_enc, cand_encs)
         elif self.score_fn == 'spon':
-            scores = self.compute_distance_to_satisfaction(query_enc, cand_encs)
+            dist = self.compute_distance_to_satisfaction(query_enc, cand_encs)
+            # Negate distances to get scores, so that when we compute softmax, low distance produces high probability
+            scores = -dist
 
         # Check for NaN
         assert not torch.isnan(scores).any()
