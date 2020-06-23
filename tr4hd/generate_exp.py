@@ -67,7 +67,7 @@ param_key_to_name = {"ea": "encoding_arch",
                      }
 
 # Set param values we want to test. For flags, use True or False. For args, use strings.
-named_param_values = {"ea": ["single", "bi"],
+named_param_values = {"ea": ["single_q", "single_c", "bi_q", "bi_c"],
                       "fe": [True, False],
                       "ne": [True, False],
                       "tr": ["none", "scaling", "projection", "highway"],

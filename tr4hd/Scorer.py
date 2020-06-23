@@ -50,12 +50,14 @@ class Scorer(torch.nn.Module):
         if pretrained_encoder is None and encoder_config is None:
             raise ValueError("Either pretrained_encoder or encoder_config must be provided.")
         self.encoding_arch = opt.encoding_arch
-        if self.encoding_arch not in ['single', 'bi']:
+        if self.encoding_arch not in ['single_q', 'single_c', 'bi_q', 'bi_c']:
             raise ValueError("Unrecognized encoding architecture '%s'" % opt.encoding_arch)
         self.freeze_encoder = opt.freeze_encoder
         self.normalize_encodings = opt.normalize_encodings
         self.dropout_prob = opt.dropout_prob
         self.transform = opt.transform
+        # Do we transform query encodings or candidate encodings?
+        self.transform_queries = self.encoding_arch in ['single_q', 'bi_q']
         if self.transform not in ['none', 'scaling', 'projection', 'highway']:
             raise ValueError("Unrecognized transform '%s'" % opt.transform)
         self.score_fn = opt.score_fn
@@ -65,7 +67,7 @@ class Scorer(torch.nn.Module):
             self.spon_epsilon = torch.tensor(opt.spon_epsilon, dtype=torch.float32)
             
         # Make encoder
-        if self.encoding_arch == "single":
+        if self.encoding_arch in ["single_q", "single_c"]:
             self.encoder = SingleEncoder(opt, pretrained_encoder=pretrained_encoder, encoder_config=encoder_config)
         else:
             self.encoder = BiEncoder(opt, pretrained_encoder=pretrained_encoder, encoder_config=encoder_config)
@@ -136,7 +138,29 @@ class Scorer(torch.nn.Module):
         dot = torch.matmul(query_enc, cand_encs.permute(1,0)).squeeze(0)
         return dot
 
-    
+
+    def transform_encodings(self, encodings):
+        """ Apply transformation layer to query encodings or candidate encodings.
+
+        Args:
+        - encodings: tensor of encodings. 1-D for queries, 2-D for candidates. If it is 2-D, each *row* must contain the encoding of a candidate.
+
+        """
+        nb_axes = len(encodings.size())
+        assert nb_axes in [1,2]
+        if nb_axes == 1:
+            encodings = encodings.unsqueeze(0)                    
+        if self.transform == 'scaling':
+            encodings = F.relu(encodings * self.projector_weights + self.projector_bias) + encodings
+        elif self.transform == 'projection':
+            encodings = F.relu(self.projector(encodings)) + encodings
+        elif self.transform == 'highway':
+            proj = F.relu(self.projector(encodings))
+            gate = torch.sigmoid(self.proj_gate(encodings))
+            encodings = (gate * proj) + ((1-gate) * encodings)
+        return encodings
+
+            
     def score_candidates(self, query_enc, cand_encs):
         """
         Score candidates wrt query. Return 1-D Tensor of scores.
@@ -157,27 +181,22 @@ class Scorer(torch.nn.Module):
         nb_cands, cand_hidden_dim = cand_encs.size()
         assert cand_hidden_dim == self.hidden_dim
 
-        # Normalize encodings
-        if self.normalize_encodings:
-            query_enc = query_enc / torch.norm(query_enc, p=2) 
-            cand_encs = cand_encs / torch.norm(cand_encs, p=2, dim=1, keepdim=True)
-        
         # Apply dropout
         if self.dropout_prob > 0:
             query_enc = self.dropout(query_enc)
             cand_encs = self.dropout(cand_encs)
 
-        # Transform query encoding
-        query_enc = query_enc.unsqueeze(0)        
-        if self.transform == 'scaling':
-            query_enc = F.relu(query_enc * self.projector_weights + self.projector_bias) + query_enc
-        elif self.transform == 'projection':
-            query_enc = F.relu(self.projector(query_enc)) + query_enc
-        elif self.transform == 'highway':
-            proj = F.relu(self.projector(query_enc))
-            gate = torch.sigmoid(self.proj_gate(query_enc))
-            query_enc = (gate * proj) + ((1-gate) * query_enc)
-
+        # Normalize encodings
+        if self.normalize_encodings:
+            query_enc = query_enc / torch.norm(query_enc, p=2) 
+            cand_encs = cand_encs / torch.norm(cand_encs, p=2, dim=1, keepdim=True)
+            
+        # Apply transformation to query or candidate encodings
+        if self.transform_queries:
+            query_enc = self.transform_encodings(query_enc)
+        else:
+            cand_encs = self.transform_encodings(cand_encs)
+            
         # Check for NaN
         #if torch.isnan(query_enc).any():
         #    query_enc = query_enc.masked_fill(torch.isnan(query_enc), 0)

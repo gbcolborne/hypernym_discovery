@@ -604,7 +604,7 @@ def main():
                         help="Freeze weights of encoder(s) during training.")
     parser.add_argument("--normalize_encodings", action='store_true',
                         help="Normalize encodings")    
-    parser.add_argument("--encoding_arch", choices=['single', 'bi'], default='single',
+    parser.add_argument("--encoding_arch", choices=['single_q', 'single_c', 'bi_q', 'bi_c'], default='single_q',
                         help="Encoding architecture")
     parser.add_argument("--transform", choices=['none', 'scaling', 'projection', 'highway'], default='none',
                         help="Transformation function applied to encodings before scoring")
